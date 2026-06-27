@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dentistdss-config
+  labels:
+    {{- include "dentistdss.labels" . | nindent 4 }}
+data:
+  application.yml: |
+{{ .Files.Get "files/application.yml" | indent 4 }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dentistdss-runtime
+  labels:
+    {{- include "dentistdss.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: homelab-vault
+  target:
+    name: dentistdss-runtime
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: {{ .Values.externalSecrets.runtimePath | quote }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dentistdss-registry
+  labels:
+    {{- include "dentistdss.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: homelab-vault
+  target:
+    name: dentistdss-registry
+    creationPolicy: Owner
+    template:
+      type: kubernetes.io/dockerconfigjson
+      data:
+        .dockerconfigjson: "{{ `{{ .dockerconfigjson }}` }}"
+  data:
+    - secretKey: dockerconfigjson
+      remoteRef:
+        key: {{ .Values.externalSecrets.registryPath | quote }}
+        property: dockerconfigjson

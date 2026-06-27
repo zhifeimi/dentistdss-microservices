@@ -1,8 +1,10 @@
-# Homelab deployment
+# Docker Compose fallback
 
-This directory is the homelab data-plane control plane for DentistDSS. It runs
-the gateway, 12 core Java services, PostgreSQL, and MongoDB as one Docker
-Compose project. The optional `genai-service` is gated behind the `ai` profile.
+The primary homelab deployment is the RKE2/Argo CD contract in
+[`chart/`](chart/README.md). This Compose project remains a single-host recovery
+path and local integration environment. It runs the gateway, 12 core Java
+services, PostgreSQL, and MongoDB. The optional `genai-service` is gated behind
+the `ai` profile.
 
 Only the API Gateway loopback port is published. Cloudflare Tunnel maps
 `api.mizhifei.press` to that port. TLS, WAF, and public ingress belong at
@@ -41,14 +43,10 @@ Cloudflare, not inside the Java container. The PWA runs separately on Vercel.
 
 ## CI/CD contract
 
-The GitHub `homelab-production` environment must contain:
-
-- secret `HOMELAB_ENV_FILE`: complete contents of `.env`
-- optional environment protection requiring approval before production deploys
-
-The runner must have labels `self-hosted`, `linux`, `homelab`, and
-`dentistdss`. CI and image builds always run on GitHub-hosted runners; only the
-deployment job reaches the homelab runner.
+Compose is not run by GitHub Actions. GitHub-hosted runners publish images and
+update the machine-owned `gitops-dev` or `gitops-prod` branch. Argo CD deploys
+the Helm chart to the corresponding RKE2 cluster. The protected
+`homelab-production` environment gates production promotion.
 
 ## Known database migration debt
 

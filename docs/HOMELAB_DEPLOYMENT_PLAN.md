@@ -26,18 +26,24 @@ Browser -> Vercel CDN -> DentistDSS PWA
            |
        Cloudflare Tunnel
            |
-       127.0.0.1:8080
+       10.80.20.204:8080 (MetalLB)
            |
+       RKE2 production cluster
+            |
        API Gateway -> Eureka -> business services
                         |          |
-                        |          +-> PostgreSQL
-                        +------------> MongoDB
+                        |          +-> PostgreSQL PVC
+                        +------------> MongoDB PVC
 ```
 
 Vercel owns static frontend delivery, preview deployments, and the production
 frontend domain. The Java gateway no longer terminates public TLS. Cloudflare
 owns API TLS and ingress. No database, registry, admin, config, or business
 service port is bound to the host.
+
+Argo CD on `pve-mgmt` reconciles the Helm chart into the separate `pve-dev` and
+`pve-prod` RKE2 clusters. Vault and External Secrets provide runtime and GHCR
+pull credentials. Docker Compose is retained only as a single-host fallback.
 
 ## Delivery pipeline
 
@@ -58,17 +64,19 @@ service port is bound to the host.
 - Publish multi-architecture `linux/amd64` and `linux/arm64` images to GHCR.
 - Tag each image with the immutable Git commit SHA; `latest` is only a
   convenience pointer.
-- Deploy the backend SHA tag through the protected
-  `homelab-production` environment.
+- Update the machine-owned `gitops-dev` branch after every successful image
+  publication; Argo CD then reconciles the dev cluster.
+- Promote a verified SHA tag to `gitops-prod` only through a manual workflow on
+  protected `main` and the `homelab-production` environment.
 - Let Vercel deploy the PWA from the same protected `main` branch.
-- Wait for Compose health checks and run HTTP smoke tests.
+- Let Argo CD reconcile the chart and Kubernetes health probes.
 
 ### Rollback
 
-Run the backend deployment workflow manually with the previous known-good
-backend SHA tag. Use Vercel's instant rollback for the PWA. Database rollback is
-separate and must use a tested backup; application rollback must never silently
-reverse a schema migration.
+Run the production promotion workflow with the previous known-good backend SHA
+tag. Argo CD reconciles that GitOps revision. Use Vercel's instant rollback for
+the PWA. Database rollback is separate and must use a tested backup;
+application rollback must never silently reverse a schema migration.
 
 ## Rollout phases
 
@@ -77,15 +85,15 @@ reverse a schema migration.
    production startup when JWT signing keys are absent.
 2. **Container release**: publish non-root, multi-architecture GHCR images and
    record image digests.
-3. **Homelab runner**: install a dedicated self-hosted Actions runner on the
-   final Linux node, label it, restrict the repository and environment, and
-   confirm Docker access.
-4. **Staging smoke test**: deploy with throwaway data, verify OAuth callbacks,
+3. **GitOps integration**: register the DentistDSS dev/prod Argo CD
+   applications, install the Vault ClusterSecretStore in both clusters, and
+   create the machine-owned promotion branches.
+4. **Staging smoke test**: deploy to `pve-dev` with throwaway data, verify OAuth callbacks,
    email, PWA routing, every health endpoint, and restart persistence.
 5. **Backups**: schedule daily PostgreSQL and MongoDB backups, encrypt and copy
    them off-host, then perform a restore drill.
-6. **Ingress**: connect Cloudflare Tunnel to the loopback gateway port and
-   enable access logs, rate limits, and monitoring.
+6. **Ingress**: connect Cloudflare Tunnel to the production gateway MetalLB
+   address and enable access logs, rate limits, and monitoring.
 7. **Vercel**: retain the native Git integration, configure production-only
    `VITE_API_HOST`, and verify SPA routing and security headers.
 8. **Production cutover**: update API DNS, run smoke tests, monitor error
@@ -93,8 +101,9 @@ reverse a schema migration.
 
 ## Required manual inputs
 
-- Final application host and its CPU, RAM, disk, OS, and architecture
-- Final Cloudflare Tunnel host and API DNS route
+- Vault access for the dev/prod runtime and GHCR pull records
+- Argo CD root repository synchronization from GitHub to the internal GitLab
+  source, or an equivalent direct GitHub source update
 - Google OAuth client ID/secret and authorized origins/redirects
 - SMTP credentials
 - Production JWT key pair
@@ -108,3 +117,5 @@ reverse a schema migration.
 - Add resource limits after measuring the final host.
 - Add centralized logs, metrics, alerts, and external uptime checks.
 - Add an encrypted, automated off-host backup target and restore CI.
+- Replace local-path database volumes with replicated storage before requiring
+  node-failure tolerance.

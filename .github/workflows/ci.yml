@@ -44,6 +44,21 @@ jobs:
       - name: Validate Compose model
         run: docker compose --env-file deploy/.env.example --file deploy/compose.yml config --quiet
 
+      - name: Validate RKE2 Helm chart
+        run: |
+          helm lint deploy/chart --values deploy/chart/values-dev.yaml
+          helm template dentistdss deploy/chart \
+            --namespace dev-dentistdss \
+            --values deploy/chart/values-dev.yaml \
+            >/tmp/dentistdss-dev.yaml
+          helm lint deploy/chart --values deploy/chart/values-prod.yaml
+          helm template dentistdss deploy/chart \
+            --namespace prod-dentistdss \
+            --values deploy/chart/values-prod.yaml \
+            >/tmp/dentistdss-prod.yaml
+          test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-dev.yaml)" -eq 12
+          test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-prod.yaml)" -eq 12
+
       - name: Validate deployment scripts
         run: bash -n deploy/scripts/*.sh
 

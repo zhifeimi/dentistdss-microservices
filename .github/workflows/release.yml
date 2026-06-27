@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       backend_tag:
-        description: Existing backend image tag to deploy
+        description: Existing immutable sha-<40 hex characters> image tag
         required: true
-        default: latest
         type: string
 
 permissions:
@@ -116,28 +115,57 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-  deploy:
-    name: Deploy backend to homelab
+  promote-dev:
+    name: Promote images to dev GitOps
     needs:
       - package
       - publish
-    if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
-    runs-on:
-      - self-hosted
-      - linux
-      - homelab
-      - dentistdss
-    timeout-minutes: 30
+    if: github.event_name == 'push' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out published revision
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Create immutable dev GitOps revision
+        run: |
+          git checkout --detach "${GITHUB_SHA}"
+          sed -i "s/^  imageTag:.*/  imageTag: ${BACKEND_TAG}/" deploy/chart/values-dev.yaml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add deploy/chart/values-dev.yaml
+          git commit -m "deploy: promote ${BACKEND_TAG} to dev [skip ci]"
+          git push --force origin HEAD:gitops-dev
+
+  promote-production:
+    name: Promote images to production GitOps
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: homelab-production
     permissions:
-      contents: read
+      contents: write
       packages: read
     steps:
-      - name: Check out deployment files
+      - name: Check out protected main branch
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Require an immutable SHA tag
+        run: |
+          if [[ ! "${BACKEND_TAG}" =~ ^sha-[0-9a-f]{40}$ ]]; then
+            echo "::error::backend_tag must match sha-<40 lowercase hex characters>"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -146,24 +174,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare protected deployment environment
-        env:
-          HOMELAB_ENV_FILE: ${{ secrets.HOMELAB_ENV_FILE }}
+      - name: Verify every promoted image exists
         run: |
-          test -n "${HOMELAB_ENV_FILE}"
-          umask 077
-          printf '%s\n' "${HOMELAB_ENV_FILE}" > "${RUNNER_TEMP}/dentistdss.env"
-          if grep -q '^BACKEND_IMAGE_TAG=' "${RUNNER_TEMP}/dentistdss.env"; then
-            sed -i "s/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${BACKEND_TAG}/" "${RUNNER_TEMP}/dentistdss.env"
-          else
-            printf 'BACKEND_IMAGE_TAG=%s\n' "${BACKEND_TAG}" >> "${RUNNER_TEMP}/dentistdss.env"
-          fi
+          services=(
+            config-server discovery-server api-gateway auth-service
+            clinic-service appointment-service clinical-records-service
+            admin-server notification-service genai-service
+            user-profile-service system-service audit-service
+          )
+          for service in "${services[@]}"; do
+            docker buildx imagetools inspect \
+              "${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/dentistdss-${service}:${BACKEND_TAG}" \
+              >/dev/null
+          done
 
-      - name: Deploy and verify
-        env:
-          DEPLOY_ENV_FILE: ${{ runner.temp }}/dentistdss.env
-        run: ./deploy/scripts/deploy.sh
-
-      - name: Remove temporary deployment environment
-        if: always()
-        run: rm -f "${RUNNER_TEMP}/dentistdss.env"
+      - name: Create immutable production GitOps revision
+        run: |
+          git checkout --detach "${GITHUB_SHA}"
+          sed -i "s/^  imageTag:.*/  imageTag: ${BACKEND_TAG}/" deploy/chart/values-prod.yaml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add deploy/chart/values-prod.yaml
+          git commit -m "deploy: promote ${BACKEND_TAG} to production [skip ci]"
+          git push --force origin HEAD:gitops-prod

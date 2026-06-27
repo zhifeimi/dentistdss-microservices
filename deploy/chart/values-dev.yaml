@@ -1,0 +1,14 @@
+global:
+  imageTag: bootstrap
+
+gateway:
+  loadBalancerIP: 10.80.30.204
+  addressPool: pve-dev-services
+
+externalSecrets:
+  runtimePath: apps/dentistdss/dev/runtime
+  registryPath: apps/dentistdss/dev/registry
+
+services:
+  api-gateway:
+    replicas: 1
