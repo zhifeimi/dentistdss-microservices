@@ -1,0 +1,400 @@
+name: dentistdss
+
+x-spring-environment: &spring-environment
+  SPRING_PROFILES_ACTIVE: prod
+  SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+  SPRING_CLOUD_CONFIG_USERNAME: ${SPRING_CONFIG_USER:?SPRING_CONFIG_USER is required}
+  SPRING_CLOUD_CONFIG_PASSWORD: ${SPRING_CONFIG_PASS:?SPRING_CONFIG_PASS is required}
+  EUREKA_URI: http://discovery-server:8761/eureka
+  LOGGING_FILE_NAME: /tmp/application.log
+
+x-spring-service: &spring-service
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - backend
+  stop_grace_period: 45s
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dentistdss
+      POSTGRES_USER: dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dentistdss -d dentistdss"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 60s
+
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: dentistdss
+      MONGO_INITDB_ROOT_USERNAME: dentistdss
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+    command: ["mongod", "--auth", "--bind_ip_all"]
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --username dentistdss
+          --password "$${MONGO_INITDB_ROOT_PASSWORD}"
+          --authenticationDatabase admin
+          --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 2)'
+      interval: 10s
+      timeout: 8s
+      retries: 10
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 60s
+
+  config-server:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-config-server:${BACKEND_IMAGE_TAG:-latest}
+    environment:
+      SPRING_PROFILES_ACTIVE: prod,native
+      SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: file:/config
+      SPRING_SECURITY_USER_NAME: ${SPRING_CONFIG_USER:?SPRING_CONFIG_USER is required}
+      SPRING_SECURITY_USER_PASSWORD: ${SPRING_CONFIG_PASS:?SPRING_CONFIG_PASS is required}
+      LOGGING_FILE_NAME: /tmp/application.log
+    volumes:
+      - ./config:/config:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl --fail --silent --show-error
+          --user "$${SPRING_SECURITY_USER_NAME}:$${SPRING_SECURITY_USER_PASSWORD}"
+          http://localhost:8888/actuator/health >/dev/null
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  discovery-server:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-discovery-server:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      config-server:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8761/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  api-gateway:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-api-gateway:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+      SERVER_PORT: "8080"
+      SERVER_SSL_ENABLED: "false"
+      AUTH_SERVICE_URL: http://auth-service:8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8080/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  auth-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-auth-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    environment:
+      <<: *spring-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JWT_RSA_PRIVATE_KEY: ${JWT_RSA_PRIVATE_KEY:?JWT_RSA_PRIVATE_KEY is required}
+      JWT_RSA_PUBLIC_KEY: ${JWT_RSA_PUBLIC_KEY:?JWT_RSA_PUBLIC_KEY is required}
+      JWT_RSA_KEY_ID: ${JWT_RSA_KEY_ID:-dentistdss-homelab-1}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
+      MAIL_HOST: ${MAIL_HOST:?MAIL_HOST is required}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
+      BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      APP_OAUTH2_AUTHORIZEDREDIRECTURIS_0: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}/oauth2/redirect
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8081/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  clinic-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-clinic-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8083/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  user-profile-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-user-profile-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AUTH_SERVICE_URL: http://auth-service:8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8085/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  system-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-system-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AUTH_SERVICE_URL: http://auth-service:8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8086/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  notification-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-notification-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    environment:
+      <<: *spring-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      MAIL_HOST: ${MAIL_HOST:?MAIL_HOST is required}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
+      BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8088/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  appointment-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-appointment-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      clinic-service:
+        condition: service_healthy
+      user-profile-service:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8089/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
+  clinical-records-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-clinical-records-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss_files?authSource=admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8090/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
+  audit-service:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-audit-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+      SPRING_DATA_MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss?authSource=admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      AUTH_SERVICE_URL: http://auth-service:8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8087/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  admin-server:
+    <<: *spring-service
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-admin-server:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      discovery-server:
+        condition: service_healthy
+    environment:
+      <<: *spring-environment
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:9090/admin/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  genai-service:
+    <<: *spring-service
+    profiles: ["ai"]
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-genai-service:${BACKEND_IMAGE_TAG:-latest}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    environment:
+      <<: *spring-environment
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      VERTEX_AI_ENABLED: "true"
+      VERTEX_AI_PROJECT_ID: ${VERTEX_AI_PROJECT_ID:-}
+      VERTEX_AI_LOCATION: ${VERTEX_AI_LOCATION:-australia-southeast1}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-service-account.json
+    volumes:
+      - ${GCP_CREDENTIALS_PATH:-./secrets/gcp-service-account.json}:/run/secrets/gcp-service-account.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8084/actuator/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 120s
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/zhifeimi/dentistdss-pwa}:${FRONTEND_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    ports:
+      - ${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080
+    networks:
+      - edge
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=4m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz | grep -q '^ok$'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres_data:
+  mongo_data:
+
+networks:
+  edge:
+  backend:
+    internal: true
+  egress:

@@ -1,0 +1,190 @@
+name: Publish and deploy backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      backend_tag:
+        description: Existing backend image tag to deploy
+        required: true
+        default: latest
+        type: string
+      frontend_tag:
+        description: Existing frontend image tag for a full deployment
+        required: true
+        default: latest
+        type: string
+      full_deploy:
+        description: Deploy frontend as well as backend services
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: homelab-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.backend_tag || format('sha-{0}', github.sha) }}
+  FRONTEND_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.frontend_tag || 'latest' }}
+
+jobs:
+  package:
+    if: github.event_name == 'push'
+    name: Package backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw --batch-mode --no-transfer-progress package -Pprod
+
+      - name: Upload service JARs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: backend-jars-${{ github.sha }}
+          path: |
+            */target/*.jar
+            !*/target/original-*.jar
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    if: github.event_name == 'push'
+    name: Publish ${{ matrix.service }}
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        service:
+          - config-server
+          - discovery-server
+          - api-gateway
+          - auth-service
+          - clinic-service
+          - appointment-service
+          - clinical-records-service
+          - admin-server
+          - notification-service
+          - genai-service
+          - user-profile-service
+          - system-service
+          - audit-service
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download packaged JARs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: backend-jars-${{ github.sha }}
+          path: .
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish multi-architecture image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ./${{ matrix.service }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/dentistdss-${{ matrix.service }}:${{ env.BACKEND_TAG }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/dentistdss-${{ matrix.service }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.BACKEND_TAG }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    name: Deploy backend to homelab
+    needs:
+      - package
+      - publish
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
+    runs-on:
+      - self-hosted
+      - linux
+      - homelab
+      - dentistdss
+    timeout-minutes: 30
+    environment:
+      name: homelab-production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out deployment files
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare protected deployment environment
+        env:
+          HOMELAB_ENV_FILE: ${{ secrets.HOMELAB_ENV_FILE }}
+        run: |
+          test -n "${HOMELAB_ENV_FILE}"
+          umask 077
+          printf '%s\n' "${HOMELAB_ENV_FILE}" > "${RUNNER_TEMP}/dentistdss.env"
+          if grep -q '^BACKEND_IMAGE_TAG=' "${RUNNER_TEMP}/dentistdss.env"; then
+            sed -i "s/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=${BACKEND_TAG}/" "${RUNNER_TEMP}/dentistdss.env"
+          else
+            printf 'BACKEND_IMAGE_TAG=%s\n' "${BACKEND_TAG}" >> "${RUNNER_TEMP}/dentistdss.env"
+          fi
+          if grep -q '^FRONTEND_IMAGE_TAG=' "${RUNNER_TEMP}/dentistdss.env"; then
+            sed -i "s/^FRONTEND_IMAGE_TAG=.*/FRONTEND_IMAGE_TAG=${FRONTEND_TAG}/" "${RUNNER_TEMP}/dentistdss.env"
+          else
+            printf 'FRONTEND_IMAGE_TAG=%s\n' "${FRONTEND_TAG}" >> "${RUNNER_TEMP}/dentistdss.env"
+          fi
+
+      - name: Deploy and verify
+        env:
+          DEPLOY_ENV_FILE: ${{ runner.temp }}/dentistdss.env
+          FULL_DEPLOY: ${{ github.event_name == 'workflow_dispatch' && inputs.full_deploy || false }}
+        run: |
+          if [[ "${FULL_DEPLOY}" != "true" ]]; then
+            export DEPLOY_SERVICES="config-server discovery-server api-gateway auth-service clinic-service appointment-service clinical-records-service admin-server notification-service user-profile-service system-service audit-service"
+          fi
+          ./deploy/scripts/deploy.sh
+
+      - name: Remove temporary deployment environment
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/dentistdss.env"

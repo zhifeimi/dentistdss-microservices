@@ -46,3 +46,9 @@ build/
 
 ### macOS ###
 .DS_Store
+
+# Homelab deployment state and secrets
+deploy/.env
+deploy/backups/
+deploy/secrets/*
+!deploy/secrets/.gitkeep
