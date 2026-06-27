@@ -23,9 +23,7 @@ that tag before Argo CD can reconcile the application.
 Create these KV v2 records:
 
 - `kv/apps/dentistdss/dev/runtime`
-- `kv/apps/dentistdss/dev/registry`
 - `kv/apps/dentistdss/prod/runtime`
-- `kv/apps/dentistdss/prod/registry`
 
 Runtime records require:
 
@@ -47,9 +45,9 @@ SPRING_DATA_MONGODB_URI
 MONGODB_URI
 ```
 
-The registry records require one `dockerconfigjson` property containing a
-complete Docker config JSON document with read access to the DentistDSS GHCR
-packages. Never commit either record.
+The release workflow makes the repository-linked GHCR images public before it
+updates either GitOps branch, so no long-lived registry credential is stored in
+the cluster.
 
 ## Validation
 

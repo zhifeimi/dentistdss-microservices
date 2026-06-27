@@ -10,7 +10,6 @@ gateway:
 
 externalSecrets:
   runtimePath: apps/dentistdss/dev/runtime
-  registryPath: apps/dentistdss/dev/registry
 
 persistence:
   storageClass: local-path

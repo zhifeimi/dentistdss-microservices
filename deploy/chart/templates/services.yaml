@@ -50,8 +50,6 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 45
-      imagePullSecrets:
-        - name: dentistdss-registry
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

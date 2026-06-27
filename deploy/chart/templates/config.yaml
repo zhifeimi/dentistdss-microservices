@@ -25,27 +25,3 @@ spec:
   dataFrom:
     - extract:
         key: {{ .Values.externalSecrets.runtimePath | quote }}
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: dentistdss-registry
-  labels:
-    {{- include "dentistdss.labels" . | nindent 4 }}
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: homelab-vault
-  target:
-    name: dentistdss-registry
-    creationPolicy: Owner
-    template:
-      type: kubernetes.io/dockerconfigjson
-      data:
-        .dockerconfigjson: "{{ `{{ .dockerconfigjson }}` }}"
-  data:
-    - secretKey: dockerconfigjson
-      remoteRef:
-        key: {{ .Values.externalSecrets.registryPath | quote }}
-        property: dockerconfigjson

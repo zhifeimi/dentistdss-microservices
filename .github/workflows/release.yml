@@ -115,12 +115,40 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+  publish-visibility:
+    name: Publish public package access
+    needs: publish
+    if: github.event_name == 'push' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Make repository-linked images public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          services=(
+            config-server discovery-server api-gateway auth-service
+            clinic-service appointment-service clinical-records-service
+            admin-server notification-service genai-service
+            user-profile-service system-service audit-service
+          )
+          for service in "${services[@]}"; do
+            gh api \
+              --method PATCH \
+              "/user/packages/container/dentistdss-${service}" \
+              --field visibility=public \
+              >/dev/null
+          done
+
   promote-dev:
     name: Promote images to dev GitOps
     needs:
       - package
       - publish
-    if: github.event_name == 'push' && needs.publish.result == 'success'
+      - publish-visibility
+    if: github.event_name == 'push' && needs.publish-visibility.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

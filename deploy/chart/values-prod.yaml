@@ -7,4 +7,3 @@ gateway:
 
 externalSecrets:
   runtimePath: apps/dentistdss/prod/runtime
-  registryPath: apps/dentistdss/prod/registry

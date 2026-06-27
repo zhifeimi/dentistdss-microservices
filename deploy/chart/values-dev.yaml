@@ -7,7 +7,6 @@ gateway:
 
 externalSecrets:
   runtimePath: apps/dentistdss/dev/runtime
-  registryPath: apps/dentistdss/dev/registry
 
 services:
   api-gateway:
