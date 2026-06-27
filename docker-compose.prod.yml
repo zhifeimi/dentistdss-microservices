@@ -85,11 +85,10 @@ services:
       - SPRING_PROFILES_ACTIVE=prod
       - SPRING_CONFIG_IMPORT=optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
       - EUREKA_URI=http://discovery-server:8761/eureka
-      - CA_STOREPASS=${CA_STOREPASS}
       - SPRING_CONFIG_USER=${SPRING_CONFIG_USER}
       - SPRING_CONFIG_PASS=${SPRING_CONFIG_PASS}
     ports:
-      - "443:443"
+      - "8080:8080"
     networks:
       - dentistdss-network
 
@@ -308,4 +307,4 @@ volumes:
 # Added network definition
 networks:
   dentistdss-network:
-    driver: bridge 
+    driver: bridge

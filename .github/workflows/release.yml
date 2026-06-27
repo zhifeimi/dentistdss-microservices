@@ -11,16 +11,6 @@ on:
         required: true
         default: latest
         type: string
-      frontend_tag:
-        description: Existing frontend image tag for a full deployment
-        required: true
-        default: latest
-        type: string
-      full_deploy:
-        description: Deploy frontend as well as backend services
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -33,7 +23,6 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   BACKEND_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.backend_tag || format('sha-{0}', github.sha) }}
-  FRONTEND_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.frontend_tag || 'latest' }}
 
 jobs:
   package:
@@ -169,21 +158,11 @@ jobs:
           else
             printf 'BACKEND_IMAGE_TAG=%s\n' "${BACKEND_TAG}" >> "${RUNNER_TEMP}/dentistdss.env"
           fi
-          if grep -q '^FRONTEND_IMAGE_TAG=' "${RUNNER_TEMP}/dentistdss.env"; then
-            sed -i "s/^FRONTEND_IMAGE_TAG=.*/FRONTEND_IMAGE_TAG=${FRONTEND_TAG}/" "${RUNNER_TEMP}/dentistdss.env"
-          else
-            printf 'FRONTEND_IMAGE_TAG=%s\n' "${FRONTEND_TAG}" >> "${RUNNER_TEMP}/dentistdss.env"
-          fi
 
       - name: Deploy and verify
         env:
           DEPLOY_ENV_FILE: ${{ runner.temp }}/dentistdss.env
-          FULL_DEPLOY: ${{ github.event_name == 'workflow_dispatch' && inputs.full_deploy || false }}
-        run: |
-          if [[ "${FULL_DEPLOY}" != "true" ]]; then
-            export DEPLOY_SERVICES="config-server discovery-server api-gateway auth-service clinic-service appointment-service clinical-records-service admin-server notification-service user-profile-service system-service audit-service"
-          fi
-          ./deploy/scripts/deploy.sh
+        run: ./deploy/scripts/deploy.sh
 
       - name: Remove temporary deployment environment
         if: always()

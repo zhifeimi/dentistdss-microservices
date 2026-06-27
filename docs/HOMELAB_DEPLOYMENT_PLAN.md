@@ -18,26 +18,26 @@ rollback, and no automated health-gated deployment.
 ## Target architecture
 
 ```text
-Internet or LAN
-      |
-Cloudflare Tunnel or existing TLS reverse proxy
-      |
-127.0.0.1:8080
-      |
-PWA/Nginx container
-      |
-private Docker network
-      |
-API Gateway (HTTP 8080) -> Eureka -> business services
-                           |          |
-                           |          +-> PostgreSQL
-                           +------------> MongoDB
+Browser -> Vercel CDN -> DentistDSS PWA
+   |
+   +-> api.mizhifei.press
+           |
+       Cloudflare edge/WAF
+           |
+       Cloudflare Tunnel
+           |
+       127.0.0.1:8080
+           |
+       API Gateway -> Eureka -> business services
+                        |          |
+                        |          +-> PostgreSQL
+                        +------------> MongoDB
 ```
 
-The Java gateway no longer terminates public TLS. This removes the committed
-keystore from the release path and gives certificates one owner at the edge.
-No database, registry, admin, config, or application service port is bound to
-the host.
+Vercel owns static frontend delivery, preview deployments, and the production
+frontend domain. The Java gateway no longer terminates public TLS. Cloudflare
+owns API TLS and ingress. No database, registry, admin, config, or business
+service port is bound to the host.
 
 ## Delivery pipeline
 
@@ -45,6 +45,8 @@ the host.
 
 - Backend: compile and test the full Maven reactor on Java 21.
 - Frontend: deterministic `npm ci`, unit/component tests, TypeScript build.
+- Vercel's Git integration creates preview deployments without duplicating the
+  deployment in GitHub Actions.
 - Validate Dockerfiles and the resolved Compose model.
 - Run dependency and secret scanning.
 - Never schedule pull-request code on the homelab runner.
@@ -52,19 +54,21 @@ the host.
 ### Main branch
 
 - Repeat CI.
-- Build one image per Java service and one PWA image.
+- Build one image per Java service.
 - Publish multi-architecture `linux/amd64` and `linux/arm64` images to GHCR.
 - Tag each image with the immutable Git commit SHA; `latest` is only a
   convenience pointer.
-- Deploy the SHA tag through the protected `homelab-production` environment.
+- Deploy the backend SHA tag through the protected
+  `homelab-production` environment.
+- Let Vercel deploy the PWA from the same protected `main` branch.
 - Wait for Compose health checks and run HTTP smoke tests.
 
 ### Rollback
 
-Run the deployment workflow manually with the previous known-good backend and
-frontend SHA tags. Compose pulls those immutable tags and recreates only
-changed containers. Database rollback is separate and must use a tested backup;
-application rollback must never silently reverse a schema migration.
+Run the backend deployment workflow manually with the previous known-good
+backend SHA tag. Use Vercel's instant rollback for the PWA. Database rollback is
+separate and must use a tested backup; application rollback must never silently
+reverse a schema migration.
 
 ## Rollout phases
 
@@ -80,15 +84,17 @@ application rollback must never silently reverse a schema migration.
    email, PWA routing, every health endpoint, and restart persistence.
 5. **Backups**: schedule daily PostgreSQL and MongoDB backups, encrypt and copy
    them off-host, then perform a restore drill.
-6. **Ingress**: connect the existing reverse proxy or Cloudflare Tunnel to the
-   loopback PWA port and enable access logs, rate limits, and monitoring.
-7. **Production cutover**: update DNS, run smoke tests, monitor error rates,
-   and retain the previous SHA tags for immediate rollback.
+6. **Ingress**: connect Cloudflare Tunnel to the loopback gateway port and
+   enable access logs, rate limits, and monitoring.
+7. **Vercel**: retain the native Git integration, configure production-only
+   `VITE_API_HOST`, and verify SPA routing and security headers.
+8. **Production cutover**: update API DNS, run smoke tests, monitor error
+   rates, and retain the previous SHA tags for immediate rollback.
 
 ## Required manual inputs
 
 - Final application host and its CPU, RAM, disk, OS, and architecture
-- Public hostname and choice of existing reverse proxy versus Cloudflare Tunnel
+- Final Cloudflare Tunnel host and API DNS route
 - Google OAuth client ID/secret and authorized origins/redirects
 - SMTP credentials
 - Production JWT key pair

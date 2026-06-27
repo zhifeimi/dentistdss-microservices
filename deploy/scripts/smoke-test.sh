@@ -10,18 +10,6 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
-
-APP_BIND_ADDRESS="${APP_BIND_ADDRESS:-127.0.0.1}"
-APP_PORT="${APP_PORT:-8080}"
-if [[ "${APP_BIND_ADDRESS}" == "0.0.0.0" ]]; then
-  APP_BIND_ADDRESS="127.0.0.1"
-fi
-
-BASE_URL="http://${APP_BIND_ADDRESS}:${APP_PORT}"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-dentistdss}"
 COMPOSE=(
   docker compose
@@ -48,9 +36,4 @@ retry() {
 retry 30 5 "${COMPOSE[@]}" exec -T api-gateway \
   curl --fail --silent --show-error http://localhost:8080/actuator/health >/dev/null
 
-if "${COMPOSE[@]}" ps --status running --services | grep -qx frontend; then
-  retry 30 5 curl --fail --silent --show-error "${BASE_URL}/healthz" >/dev/null
-  printf 'Gateway and frontend smoke tests passed at %s\n' "${BASE_URL}"
-else
-  printf 'Gateway smoke test passed; frontend is not running in this deployment.\n'
-fi
+printf 'Gateway smoke test passed.\n'

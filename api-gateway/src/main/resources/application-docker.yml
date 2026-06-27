@@ -3,13 +3,7 @@
 # =============================================================================
 
 server:
-  port: 443
-  ssl:
-    enabled: true
-    key-store: file:/app/certs/keystore.p12
-    key-store-password: ${CA_STOREPASS}
-    key-store-type: PKCS12
-    key-alias: api-gateway
+  port: 8080
 
 spring:
   application:

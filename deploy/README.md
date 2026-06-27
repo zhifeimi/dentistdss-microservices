@@ -1,25 +1,25 @@
 # Homelab deployment
 
-This directory is the deployment control plane for DentistDSS. It runs the PWA,
-gateway, 12 core Java services, PostgreSQL, and MongoDB as one Docker Compose
-project. The optional `genai-service` is gated behind the `ai` profile.
+This directory is the homelab data-plane control plane for DentistDSS. It runs
+the gateway, 12 core Java services, PostgreSQL, and MongoDB as one Docker
+Compose project. The optional `genai-service` is gated behind the `ai` profile.
 
-Only the PWA port is published. The PWA container proxies API and OAuth traffic
-to the gateway over the private Docker network. TLS belongs at the existing
-homelab reverse proxy or Cloudflare Tunnel, not inside the Java container.
+Only the API Gateway loopback port is published. Cloudflare Tunnel maps
+`api.mizhifei.press` to that port. TLS, WAF, and public ingress belong at
+Cloudflare, not inside the Java container. The PWA runs separately on Vercel.
 
 ## Host prerequisites
 
 - Linux host with Docker Engine 27+ and Docker Compose v2
 - At least 8 CPU cores, 16 GB RAM, and 40 GB free disk for the full stack
-- A reverse proxy or tunnel targeting `http://127.0.0.1:8080`
+- Cloudflare Tunnel targeting `http://127.0.0.1:8080`
 - A dedicated GitHub Actions runner account with Docker access
 
 ## First deploy
 
 1. Copy `.env.example` to `.env`.
-2. Replace every placeholder and keep `APP_BIND_ADDRESS=127.0.0.1` when using a
-   local reverse proxy or tunnel.
+2. Replace every placeholder and keep `API_BIND_ADDRESS=127.0.0.1` when using a
+   Cloudflare Tunnel on the same host.
 3. Generate the JWT keys:
 
    ```bash
@@ -35,7 +35,7 @@ homelab reverse proxy or Cloudflare Tunnel, not inside the Java container.
 
 4. Authenticate Docker to GHCR if the packages are private.
 5. Run `./scripts/deploy.sh`.
-6. Configure the reverse proxy and test the public URL.
+6. Configure Cloudflare Tunnel and test the public API URL.
 7. Run `./scripts/backup.sh`, copy the backup off-host, and verify a restore
    before treating the deployment as durable.
 
