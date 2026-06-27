@@ -45,6 +45,16 @@ SPRING_DATA_MONGODB_URI
 MONGODB_URI
 ```
 
+Seed each record interactively without printing credentials:
+
+```bash
+./deploy/scripts/seed-vault-runtime.sh dev
+./deploy/scripts/seed-vault-runtime.sh prod
+```
+
+The helper generates independent database, Config Server, and 3072-bit RSA JWT
+values. It prompts locally for the Vault token, Google OAuth, and SMTP values.
+
 The release workflow makes the repository-linked GHCR images public before it
 updates either GitOps branch, so no long-lived registry credential is stored in
 the cluster.
