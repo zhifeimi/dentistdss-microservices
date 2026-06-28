@@ -133,6 +133,10 @@ jobs:
             admin-server notification-service genai-service
             user-profile-service system-service audit-service
           )
+          accept_types="application/vnd.oci.image.index.v1+json"
+          accept_types+=",application/vnd.oci.image.manifest.v1+json"
+          accept_types+=",application/vnd.docker.distribution.manifest.list.v2+json"
+          accept_types+=",application/vnd.docker.distribution.manifest.v2+json"
           for service in "${services[@]}"; do
             token="$(
               curl --fail --silent --show-error \
@@ -141,7 +145,7 @@ jobs:
             )"
             curl --fail --silent --show-error \
               --header "Authorization: Bearer ${token}" \
-              --header "Accept: application/vnd.oci.image.index.v1+json" \
+              --header "Accept: ${accept_types}" \
               "https://ghcr.io/v2/${GITHUB_REPOSITORY_OWNER}/dentistdss-${service}/manifests/${BACKEND_TAG}" \
               >/dev/null
           done
