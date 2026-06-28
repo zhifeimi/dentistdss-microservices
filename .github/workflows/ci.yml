@@ -1,0 +1,69 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Maven verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Compile and test
+        run: ./mvnw --batch-mode --no-transfer-progress verify -Pprod
+
+  deployment-contract:
+    name: Validate deployment contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate Compose model
+        run: docker compose --env-file deploy/.env.example --file deploy/compose.yml config --quiet
+
+      - name: Validate RKE2 Helm chart
+        run: |
+          helm lint deploy/chart --values deploy/chart/values-dev.yaml
+          helm template dentistdss deploy/chart \
+            --namespace dev-dentistdss \
+            --values deploy/chart/values-dev.yaml \
+            >/tmp/dentistdss-dev.yaml
+          helm lint deploy/chart --values deploy/chart/values-prod.yaml
+          helm template dentistdss deploy/chart \
+            --namespace prod-dentistdss \
+            --values deploy/chart/values-prod.yaml \
+            >/tmp/dentistdss-prod.yaml
+          test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-dev.yaml)" -eq 12
+          test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-prod.yaml)" -eq 12
+
+      - name: Validate deployment scripts
+        run: bash -n deploy/scripts/*.sh
+
+      - name: Reject executable database design documents
+        run: |
+          if head -n 1 docker-entrypoint-initdb.d/01-init.sql | grep -q '^Enum '; then
+            echo "::notice::Legacy 01-init.sql is DBML and is intentionally excluded from deploy/compose.yml"
+          fi

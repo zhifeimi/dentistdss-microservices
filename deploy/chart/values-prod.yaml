@@ -1,0 +1,9 @@
+global:
+  imageTag: bootstrap
+
+gateway:
+  loadBalancerIP: 10.80.20.204
+  addressPool: pve-prod-services
+
+externalSecrets:
+  runtimePath: apps/dentistdss/prod/runtime

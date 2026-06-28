@@ -1,0 +1,13 @@
+spring:
+  cloud:
+    config:
+      allow-override: true
+      override-none: true
+  jpa:
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

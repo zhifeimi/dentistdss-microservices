@@ -1,0 +1,119 @@
+global:
+  imageRegistry: ghcr.io/zhifeimi
+  imageTag: bootstrap
+  imagePullPolicy: IfNotPresent
+  publicBaseUrl: https://dentist.mizhifei.press
+
+gateway:
+  loadBalancerIP: ""
+  addressPool: ""
+
+externalSecrets:
+  runtimePath: apps/dentistdss/dev/runtime
+
+persistence:
+  storageClass: local-path
+  postgresSize: 20Gi
+  mongoSize: 20Gi
+
+commonEnv:
+  SPRING_PROFILES_ACTIVE: prod
+  SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+  EUREKA_URI: http://discovery-server:8761/eureka
+  LOGGING_FILE_NAME: /tmp/application.log
+
+services:
+  config-server:
+    port: 8888
+    replicas: 1
+    configServer: true
+    env:
+      SPRING_PROFILES_ACTIVE: prod,native
+      SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: file:/config
+  discovery-server:
+    port: 8761
+    replicas: 1
+  api-gateway:
+    port: 8080
+    replicas: 2
+    env:
+      SERVER_PORT: "8080"
+      SERVER_SSL_ENABLED: "false"
+      AUTH_SERVICE_URL: http://auth-service:8081
+  auth-service:
+    port: 8081
+    replicas: 1
+    externalEgress: true
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      BASE_URL: https://dentist.mizhifei.press
+      APP_OAUTH2_AUTHORIZEDREDIRECTURIS_0: https://dentist.mizhifei.press/oauth2/redirect
+  clinic-service:
+    port: 8083
+    replicas: 1
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+  genai-service:
+    port: 8084
+    replicas: 1
+    enabled: false
+    externalEgress: true
+    env:
+      VERTEX_AI_ENABLED: "true"
+      VERTEX_AI_LOCATION: australia-southeast1
+  user-profile-service:
+    port: 8085
+    replicas: 1
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      AUTH_SERVICE_URL: http://auth-service:8081
+  system-service:
+    port: 8086
+    replicas: 1
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      AUTH_SERVICE_URL: http://auth-service:8081
+  audit-service:
+    port: 8087
+    replicas: 1
+    env:
+      AUTH_SERVICE_URL: http://auth-service:8081
+  notification-service:
+    port: 8088
+    replicas: 1
+    externalEgress: true
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      BASE_URL: https://dentist.mizhifei.press
+  appointment-service:
+    port: 8089
+    replicas: 1
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+  clinical-records-service:
+    port: 8090
+    replicas: 1
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+  admin-server:
+    port: 9090
+    replicas: 1
+    healthPath: /admin/actuator/health
+
+javaResources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+databaseResources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi

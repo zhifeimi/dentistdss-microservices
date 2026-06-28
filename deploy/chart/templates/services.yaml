@@ -1,0 +1,145 @@
+{{- range $name, $service := .Values.services }}
+{{- if or (not (hasKey $service "enabled")) $service.enabled }}
+{{- $environment := mergeOverwrite (deepCopy $.Values.commonEnv) ($service.env | default dict) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "dentistdss.labels" $ | nindent 4 }}
+  {{- if eq $name "api-gateway" }}
+  annotations:
+    metallb.universe.tf/address-pool: {{ $.Values.gateway.addressPool | quote }}
+  {{- end }}
+spec:
+  {{- if eq $name "api-gateway" }}
+  type: LoadBalancer
+  loadBalancerIP: {{ $.Values.gateway.loadBalancerIP | quote }}
+  {{- else }}
+  type: ClusterIP
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - name: http
+      port: {{ $service.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "dentistdss.labels" $ | nindent 4 }}
+spec:
+  replicas: {{ $service.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/part-of: dentistdss
+        dentistdss.io/external-egress: {{ $service.externalEgress | default false | quote }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ $name }}
+          image: "{{ $.Values.global.imageRegistry }}/dentistdss-{{ $name }}:{{ $.Values.global.imageTag }}"
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          envFrom:
+            - secretRef:
+                name: dentistdss-runtime
+          env:
+            - name: SPRING_CLOUD_CONFIG_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-runtime
+                  key: SPRING_CONFIG_USER
+            - name: SPRING_CLOUD_CONFIG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-runtime
+                  key: SPRING_CONFIG_PASS
+            {{- if $service.configServer }}
+            - name: SPRING_SECURITY_USER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-runtime
+                  key: SPRING_CONFIG_USER
+            - name: SPRING_SECURITY_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-runtime
+                  key: SPRING_CONFIG_PASS
+            {{- end }}
+            {{- range $key, $value := $environment }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $service.port }}
+          startupProbe:
+            httpGet:
+              path: {{ $service.healthPath | default "/actuator/health" }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: {{ $service.healthPath | default "/actuator/health" }}
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: {{ $service.healthPath | default "/actuator/health" }}
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $.Values.javaResources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if $service.configServer }}
+            - name: config
+              mountPath: /config/application.yml
+              subPath: application.yml
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+        {{- if $service.configServer }}
+        - name: config
+          configMap:
+            name: dentistdss-config
+        {{- end }}
+{{- end }}
+{{- end }}

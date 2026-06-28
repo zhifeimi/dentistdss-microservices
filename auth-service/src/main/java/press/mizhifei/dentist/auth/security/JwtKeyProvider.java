@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import java.util.Base64;
 
 /**
@@ -26,20 +27,24 @@ public class JwtKeyProvider {
 
     public JwtKeyProvider(@Value("${jwt.rsa.private-key:}") String privateKeyPem,
                          @Value("${jwt.rsa.public-key:}") String publicKeyPem,
-                         @Value("${jwt.rsa.key-id:dentistdss}") String keyId) {
+                         @Value("${jwt.rsa.key-id:dentistdss}") String keyId,
+                         @Value("${spring.profiles.active:}") String activeProfiles) {
         this.keyId = keyId;
         
         if (privateKeyPem.isEmpty() || publicKeyPem.isEmpty()) {
-            log.info("No RSA keys provided in configuration, generating new key pair");
+            boolean productionProfile = Arrays.stream(activeProfiles.split(","))
+                .map(String::trim)
+                .anyMatch("prod"::equalsIgnoreCase);
+
+            if (productionProfile) {
+                throw new IllegalStateException(
+                    "JWT_RSA_PRIVATE_KEY and JWT_RSA_PUBLIC_KEY are required in the prod profile");
+            }
+
+            log.warn("No RSA keys provided; generating an ephemeral development key pair");
             KeyPair keyPair = generateKeyPair();
             this.privateKey = keyPair.getPrivate();
             this.publicKey = keyPair.getPublic();
-            
-            // Log the generated keys for configuration (in production, store these securely)
-            log.warn("Generated RSA Private Key (Base64): {}", 
-                Base64.getEncoder().encodeToString(privateKey.getEncoded()));
-            log.warn("Generated RSA Public Key (Base64): {}", 
-                Base64.getEncoder().encodeToString(publicKey.getEncoded()));
         } else {
             this.privateKey = parsePrivateKey(privateKeyPem);
             this.publicKey = parsePublicKey(publicKeyPem);

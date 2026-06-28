@@ -1,0 +1,6 @@
+# Intentionally empty shared configuration.
+#
+# Services currently keep their production configuration in their own images.
+# This native Config Server directory provides a stable migration path for
+# future shared settings without making production depend on a public Git repo.
+{}
