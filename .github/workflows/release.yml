@@ -116,29 +116,37 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
   publish-visibility:
-    name: Publish public package access
+    name: Verify public package access
     needs: publish
     if: github.event_name == 'push' && needs.publish.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      packages: write
+      contents: read
     steps:
-      - name: Make repository-linked images public
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify anonymous manifest access
         run: |
+          set -o errexit -o nounset -o pipefail
           services=(
             config-server discovery-server api-gateway auth-service
             clinic-service appointment-service clinical-records-service
             admin-server notification-service genai-service
             user-profile-service system-service audit-service
           )
+          accept_types="application/vnd.oci.image.index.v1+json"
+          accept_types+=",application/vnd.oci.image.manifest.v1+json"
+          accept_types+=",application/vnd.docker.distribution.manifest.list.v2+json"
+          accept_types+=",application/vnd.docker.distribution.manifest.v2+json"
           for service in "${services[@]}"; do
-            gh api \
-              --method PATCH \
-              "/user/packages/container/dentistdss-${service}" \
-              --field visibility=public \
+            token="$(
+              curl --fail --silent --show-error \
+                "https://ghcr.io/token?scope=repository:${GITHUB_REPOSITORY_OWNER}/dentistdss-${service}:pull" |
+                jq --exit-status --raw-output '.token'
+            )"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer ${token}" \
+              --header "Accept: ${accept_types}" \
+              "https://ghcr.io/v2/${GITHUB_REPOSITORY_OWNER}/dentistdss-${service}/manifests/${BACKEND_TAG}" \
               >/dev/null
           done
 
