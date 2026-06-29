@@ -62,7 +62,7 @@
 		<spring-boot-admin.version>3.5.0</spring-boot-admin.version>
 		<springdoc-openapi.version>2.8.8</springdoc-openapi.version>
         <spring-ai.version>1.0.0</spring-ai.version>
-		<google-api-client.version>2.8.0</google-api-client.version>
+		<google-api-client.version>2.9.0</google-api-client.version>
 		<google-http-client.version>1.47.0</google-http-client.version>
 		<spring-cloud-gcp.version>6.2.1</spring-cloud-gcp.version>
 		<google-cloud-libraries.version>26.61.0</google-cloud-libraries.version>
