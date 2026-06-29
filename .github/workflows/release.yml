@@ -175,7 +175,7 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add deploy/chart/values-dev.yaml
           git commit -m "deploy: promote ${BACKEND_TAG} to dev [skip ci]"
-          git push --force origin HEAD:gitops-dev
+          git push --force origin HEAD:refs/heads/gitops-dev
 
   promote-production:
     name: Promote images to production GitOps
@@ -232,4 +232,4 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add deploy/chart/values-prod.yaml
           git commit -m "deploy: promote ${BACKEND_TAG} to production [skip ci]"
-          git push --force origin HEAD:gitops-prod
+          git push --force origin HEAD:refs/heads/gitops-prod
