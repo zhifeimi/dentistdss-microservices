@@ -97,5 +97,7 @@ app:
     base-url: ${BASE_URL:http://localhost:3000}
   oauth2:
     authorizedRedirectUris:
+      - https://dentistdss.vercel.app/oauth2/redirect
+      - https://dentistgpt.vercel.app/oauth2/redirect
       - https://dentist.mizhifei.press/oauth2/redirect
       - http://localhost:3000/oauth2/redirect # Default for local React app
