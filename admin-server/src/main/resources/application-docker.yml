@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: admin-server
+  webflux:
+    base-path: /admin
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
 
