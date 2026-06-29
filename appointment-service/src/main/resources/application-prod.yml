@@ -4,6 +4,11 @@
 
 server:
   port: 8089
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
 
 spring:
   application:
@@ -141,16 +146,6 @@ feign:
       min-request-size: 2048
     response:
       enabled: true
-
-# =============================================================================
-# Security Configuration
-# =============================================================================
-server:
-  error:
-    include-message: never
-    include-binding-errors: never
-    include-stacktrace: never
-    include-exception: false
 
 # =============================================================================
 # Application Specific Configuration
