@@ -5,6 +5,8 @@ x-spring-environment: &spring-environment
   SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
   SPRING_CLOUD_CONFIG_USERNAME: ${SPRING_CONFIG_USER:?SPRING_CONFIG_USER is required}
   SPRING_CLOUD_CONFIG_PASSWORD: ${SPRING_CONFIG_PASS:?SPRING_CONFIG_PASS is required}
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
   EUREKA_URI: http://discovery-server:8761/eureka
   LOGGING_FILE_NAME: /tmp/application.log
 

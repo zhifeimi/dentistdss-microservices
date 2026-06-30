@@ -19,6 +19,8 @@ persistence:
 commonEnv:
   SPRING_PROFILES_ACTIVE: prod
   SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
   EUREKA_URI: http://discovery-server:8761/eureka
   LOGGING_FILE_NAME: /tmp/application.log
 
