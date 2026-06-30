@@ -58,6 +58,27 @@ jobs:
             >/tmp/dentistdss-prod.yaml
           test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-dev.yaml)" -eq 12
           test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-prod.yaml)" -eq 12
+          for manifest in /tmp/dentistdss-dev.yaml /tmp/dentistdss-prod.yaml; do
+            awk '
+              function validate_document() {
+                if (is_deployment && is_config_server && has_config_import) {
+                  print "config-server must not set SPRING_CONFIG_IMPORT" > "/dev/stderr"
+                  exit 1
+                }
+              }
+              /^---$/ {
+                validate_document()
+                is_deployment = 0
+                is_config_server = 0
+                has_config_import = 0
+                next
+              }
+              $0 == "kind: Deployment" { is_deployment = 1 }
+              $0 == "  name: config-server" { is_config_server = 1 }
+              $0 ~ /- name: SPRING_CONFIG_IMPORT$/ { has_config_import = 1 }
+              END { validate_document() }
+            ' "$manifest"
+          done
 
       - name: Validate deployment scripts
         run: bash -n deploy/scripts/*.sh

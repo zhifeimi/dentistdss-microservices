@@ -1,6 +1,10 @@
 {{- range $name, $service := .Values.services }}
 {{- if or (not (hasKey $service "enabled")) $service.enabled }}
-{{- $environment := mergeOverwrite (deepCopy $.Values.commonEnv) ($service.env | default dict) }}
+{{- $commonEnvironment := deepCopy $.Values.commonEnv }}
+{{- if $service.configServer }}
+{{- $_ := unset $commonEnvironment "SPRING_CONFIG_IMPORT" }}
+{{- end }}
+{{- $environment := mergeOverwrite $commonEnvironment ($service.env | default dict) }}
 ---
 apiVersion: v1
 kind: Service
