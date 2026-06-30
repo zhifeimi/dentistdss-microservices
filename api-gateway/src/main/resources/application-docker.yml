@@ -27,6 +27,8 @@ spring:
               '[/**]':
                 allowedOrigins:
                   - "https://dentist.mizhifei.press"
+                  - "https://dentistdss.vercel.app"
+                  - "https://dentistgpt.vercel.app"
                   - "https://accounts.google.com"
                 allowedMethods:
                   - GET

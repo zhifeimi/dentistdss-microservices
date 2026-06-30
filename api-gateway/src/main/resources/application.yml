@@ -27,6 +27,8 @@ spring:
               '[/**]':
                 allowedOrigins:
                   - "http://localhost:3000"
+                  - "https://dentistdss.vercel.app"
+                  - "https://dentistgpt.vercel.app"
                   - "https://accounts.google.com"
                 allowedMethods:
                   - GET
@@ -328,7 +330,6 @@ management:
       show-details: always
     gateway:
       access: READ_ONLY
-
 
 
 

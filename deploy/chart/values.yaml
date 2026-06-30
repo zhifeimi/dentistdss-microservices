@@ -2,7 +2,7 @@ global:
   imageRegistry: ghcr.io/zhifeimi
   imageTag: bootstrap
   imagePullPolicy: IfNotPresent
-  publicBaseUrl: https://dentist.mizhifei.press
+  publicBaseUrl: https://dentistdss.vercel.app
 
 gateway:
   loadBalancerIP: ""
@@ -46,8 +46,10 @@ services:
     externalEgress: true
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      BASE_URL: https://dentist.mizhifei.press
-      APP_OAUTH2_AUTHORIZEDREDIRECTURIS_0: https://dentist.mizhifei.press/oauth2/redirect
+      BASE_URL: https://dentistdss.vercel.app
+      APP_OAUTH2_AUTHORIZEDREDIRECTURIS_0: https://dentistdss.vercel.app/oauth2/redirect
+      APP_OAUTH2_AUTHORIZEDREDIRECTURIS_1: https://dentistgpt.vercel.app/oauth2/redirect
+      APP_OAUTH2_AUTHORIZEDREDIRECTURIS_2: https://dentist.mizhifei.press/oauth2/redirect
   clinic-service:
     port: 8083
     replicas: 1
@@ -84,7 +86,7 @@ services:
     externalEgress: true
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      BASE_URL: https://dentist.mizhifei.press
+      BASE_URL: https://dentistdss.vercel.app
   appointment-service:
     port: 8089
     replicas: 1

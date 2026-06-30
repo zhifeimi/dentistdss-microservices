@@ -90,11 +90,12 @@ app:
   email-verification:
     token-expiry-minutes: 43200 # 30 days in minutes
     code-expiry-minutes: 10 # 10 minutes in minutes
-    base-url: ${BASE_URL:https://dentist.mizhifei.press}
+    base-url: ${BASE_URL:https://dentistdss.vercel.app}
   oauth2:
     authorizedRedirectUris:
+      - https://dentistdss.vercel.app/oauth2/redirect
+      - https://dentistgpt.vercel.app/oauth2/redirect
       - https://dentist.mizhifei.press/oauth2/redirect
       - http://localhost:3000/oauth2/redirect # Default for local React app
-
 
 

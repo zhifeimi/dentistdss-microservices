@@ -36,7 +36,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
     private final OAuthUserService oAuthUserService;
 
-    @Value("${app.oauth2.authorizedRedirectUris:http://localhost:3000/oauth2/redirect,https://dentist.mizhifei.press/oauth2/redirect}")
+    @Value("${app.oauth2.authorizedRedirectUris:http://localhost:3000/oauth2/redirect,https://dentistdss.vercel.app/oauth2/redirect,https://dentistgpt.vercel.app/oauth2/redirect,https://dentist.mizhifei.press/oauth2/redirect}")
     private List<String> authorizedRedirectUris;
 
     @Override
