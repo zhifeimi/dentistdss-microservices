@@ -13,6 +13,9 @@ single-host fallback.
 - secret store: `ClusterSecretStore/homelab-vault`
 - registry: `ghcr.io/zhifeimi`
 - production ingress: Cloudflare Tunnel to `http://10.80.20.204:8080`
+- backend pods are spread across RKE2 nodes by hostname
+- dev uses non-surging rollouts, a 768 MiB Java container limit, and a 50% heap cap
+- application logs go to stdout; `/tmp` remains RAM-backed for temporary files
 
 The `bootstrap` image tag is intentionally non-runnable. The release workflow
 creates the GitOps branches only after all commit-SHA images exist and replaces

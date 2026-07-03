@@ -8,6 +8,20 @@ gateway:
 externalSecrets:
   runtimePath: apps/dentistdss/dev/runtime
 
+commonEnv:
+  JAVA_TOOL_OPTIONS: -Xms64m -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError
+
+deploymentStrategy:
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
+
+javaResources:
+  requests:
+    memory: 384Mi
+  limits:
+    memory: 768Mi
+
 services:
   api-gateway:
     replicas: 1
