@@ -22,7 +22,17 @@ commonEnv:
   SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
   SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
   EUREKA_URI: http://discovery-server:8761/eureka
-  LOGGING_FILE_NAME: /tmp/application.log
+
+deploymentStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  whenUnsatisfiable: ScheduleAnyway
 
 services:
   config-server:

@@ -12,4 +12,6 @@ COPY --chown=app:app target/config-server-*.jar app.jar
 USER app
 EXPOSE 8888
 
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/app.jar"]
+ENV JAVA_TOOL_OPTIONS="-Xms64m -XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
