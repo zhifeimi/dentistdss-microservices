@@ -9,6 +9,28 @@ data:
 {{ .Files.Get "files/application.yml" | indent 4 }}
 ---
 apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: {{ .Values.externalSecrets.storeName }}
+  labels:
+    {{- include "dentistdss.labels" . | nindent 4 }}
+spec:
+  provider:
+    vault:
+      server: {{ required "externalSecrets.vaultServer is required" .Values.externalSecrets.vaultServer | quote }}
+      path: kv
+      version: v2
+      caProvider:
+        type: ConfigMap
+        name: vault-ca
+        namespace: external-secrets
+        key: ca.crt
+      auth:
+        tokenSecretRef:
+          name: {{ .Values.externalSecrets.tokenSecretName }}
+          key: token
+---
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: dentistdss-runtime
@@ -17,8 +39,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    kind: ClusterSecretStore
-    name: homelab-vault
+    kind: SecretStore
+    name: {{ .Values.externalSecrets.storeName }}
   target:
     name: dentistdss-runtime
     creationPolicy: Owner

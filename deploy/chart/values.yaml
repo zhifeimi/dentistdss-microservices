@@ -9,6 +9,9 @@ gateway:
   addressPool: ""
 
 externalSecrets:
+  vaultServer: ""
+  storeName: homelab-vault-dentistdss
+  tokenSecretName: vault-dentistdss-token
   runtimePath: apps/dentistdss/dev/runtime
 
 persistence:

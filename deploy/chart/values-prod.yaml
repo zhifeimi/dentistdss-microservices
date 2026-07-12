@@ -6,4 +6,5 @@ gateway:
   addressPool: pve-prod-services
 
 externalSecrets:
+  vaultServer: https://10.80.0.13:8200
   runtimePath: apps/dentistdss/prod/runtime
