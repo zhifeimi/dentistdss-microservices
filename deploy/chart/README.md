@@ -10,7 +10,7 @@ single-host fallback.
 - dev namespace: `dev-dentistdss`, gateway address `10.80.30.204`
 - prod namespace: `prod-dentistdss`, gateway address `10.80.20.204`
 - storage class: `local-path`
-- secret store: `ClusterSecretStore/homelab-vault`
+- secret store: namespace `SecretStore/homelab-vault-dentistdss`
 - registry: `ghcr.io/zhifeimi`
 - production ingress: Cloudflare Tunnel to `http://10.80.20.204:8080`
 - backend pods are spread across RKE2 nodes by hostname
@@ -27,6 +27,11 @@ Create these KV v2 records:
 
 - `kv/apps/dentistdss/dev/runtime`
 - `kv/apps/dentistdss/prod/runtime`
+
+Each environment requires a `vault-dentistdss-token` Secret in its application
+namespace. The token must have read access only to that environment's runtime
+record. The chart creates the namespace-scoped SecretStore that consumes the
+token; never restore the former cluster-wide Vault store.
 
 Runtime records require:
 

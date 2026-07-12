@@ -6,6 +6,7 @@ gateway:
   addressPool: pve-dev-services
 
 externalSecrets:
+  vaultServer: https://10.80.0.13:8200
   runtimePath: apps/dentistdss/dev/runtime
 
 commonEnv:

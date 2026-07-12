@@ -86,7 +86,8 @@ application rollback must never silently reverse a schema migration.
 2. **Container release**: publish non-root, multi-architecture GHCR images and
    record image digests.
 3. **GitOps integration**: register the DentistDSS dev/prod Argo CD
-   applications, install the Vault ClusterSecretStore in both clusters, and
+   applications, provision an environment-scoped Vault policy and token Secret
+   for each namespace, let the chart install its namespace SecretStore, and
    create the machine-owned promotion branches.
 4. **Staging smoke test**: deploy to `pve-dev` with throwaway data, verify OAuth callbacks,
    email, PWA routing, every health endpoint, and restart persistence.
