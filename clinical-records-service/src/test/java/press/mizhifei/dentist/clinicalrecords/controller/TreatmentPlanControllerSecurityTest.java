@@ -87,6 +87,27 @@ class TreatmentPlanControllerSecurityTest {
     }
 
     @Test
+    void dentistMutationReachesServiceWithoutCsrfToken() throws Exception {
+        TreatmentPlanResponse response = TreatmentPlanResponse.builder().id(100).build();
+        when(treatmentPlanService.startTreatmentPlan(
+                argThat((ClinicalRecordsActor actor) -> actor.userId() == 84L
+                        && actor.roles().equals(java.util.Set.of("DENTIST"))
+                        && Long.valueOf(7L).equals(actor.clinicId())),
+                eq(100)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/clinical-records/treatment-plan/{id}/start", 100)
+                        .with(dentistJwt()))
+                .andExpect(status().isOk());
+
+        verify(treatmentPlanService).startTreatmentPlan(
+                argThat((ClinicalRecordsActor actor) -> actor.userId() == 84L
+                        && actor.roles().equals(java.util.Set.of("DENTIST"))
+                        && Long.valueOf(7L).equals(actor.clinicId())),
+                eq(100));
+    }
+
+    @Test
     void receptionistCannotReadTreatmentPlan() throws Exception {
         mockMvc.perform(get("/clinical-records/treatment-plan/{id}", 100)
                         .with(jwt()
@@ -130,6 +151,15 @@ class TreatmentPlanControllerSecurityTest {
                 .andExpect(status().isForbidden());
 
         verifyNoInteractions(treatmentPlanService);
+    }
+
+    private org.springframework.test.web.servlet.request.RequestPostProcessor dentistJwt() {
+        return jwt()
+                .jwt(token -> token
+                        .subject("84")
+                        .claim("roles", List.of("DENTIST"))
+                        .claim("clinicId", 7L))
+                .authorities(new SimpleGrantedAuthority("ROLE_DENTIST"));
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor patientJwt() {

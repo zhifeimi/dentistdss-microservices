@@ -70,7 +70,10 @@ class GatewayCorsSecurityIntegrationTest {
                 .exchange()
                 .expectStatus().isUnauthorized()
                 .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED_ORIGIN)
-                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
+                .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
+                .expectHeader().value(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS,
+                        value -> org.junit.jupiter.api.Assertions.assertTrue(
+                                value.toLowerCase().contains("x-xsrf-token")));
     }
 
     @Test

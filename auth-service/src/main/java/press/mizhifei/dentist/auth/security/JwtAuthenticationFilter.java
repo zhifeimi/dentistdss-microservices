@@ -101,8 +101,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return "POST".equals(request.getMethod())
-                && "/auth/refresh".equals(request.getServletPath());
+        String requestPath = pathWithinApplication(request);
+        return ("POST".equals(request.getMethod())
+                && "/auth/refresh".equals(requestPath))
+                || ("GET".equals(request.getMethod())
+                && "/auth/csrf".equals(requestPath));
+    }
+
+    private String pathWithinApplication(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        return StringUtils.hasLength(contextPath) && requestUri.startsWith(contextPath)
+                ? requestUri.substring(contextPath.length())
+                : requestUri;
     }
 
     private void reject(HttpServletResponse response) throws IOException {

@@ -26,6 +26,7 @@ import press.mizhifei.dentist.auth.security.CustomUserDetailsService;
 import press.mizhifei.dentist.auth.security.JwtAuthenticationFilter;
 import press.mizhifei.dentist.auth.security.JwtTokenProvider;
 import press.mizhifei.dentist.auth.security.UserPrincipal;
+import press.mizhifei.dentist.auth.service.AuthCookieService;
 import press.mizhifei.dentist.auth.service.SecurityStateService;
 import press.mizhifei.dentist.auth.service.UserApprovalService;
 
@@ -148,6 +149,11 @@ class UserApprovalControllerSecurityTest {
         @Bean
         UserApprovalService userApprovalService() {
             return mock(UserApprovalService.class);
+        }
+
+        @Bean
+        AuthCookieService authCookieService() {
+            return new AuthCookieService();
         }
 
         @Bean

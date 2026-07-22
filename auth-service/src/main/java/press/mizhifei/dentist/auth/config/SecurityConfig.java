@@ -1,5 +1,6 @@
 package press.mizhifei.dentist.auth.config;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -11,13 +12,16 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.util.StringUtils;
 import press.mizhifei.dentist.auth.security.JwtAuthenticationFilter;
+import press.mizhifei.dentist.auth.service.AuthCookieService;
 
 @Configuration
 @EnableWebSecurity
@@ -26,6 +30,7 @@ import press.mizhifei.dentist.auth.security.JwtAuthenticationFilter;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final AuthCookieService authCookieService;
 
     @Value("${springdoc.api-docs.enabled:false}")
     private boolean springdocEnabled;
@@ -33,7 +38,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.cors(Customizer.withDefaults())
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> {
+                    csrf.csrfTokenRepository(authCookieService.csrfTokenRepository());
+                    csrf.csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler());
+                    csrf.requireCsrfProtectionMatcher(this::requiresRefreshCookieCsrfProtection);
+                })
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(HttpMethod.POST,
@@ -48,6 +57,7 @@ public class SecurityConfig {
                                     "/oauth2/token")
                             .permitAll();
                     auth.requestMatchers(HttpMethod.GET,
+                                    "/auth/csrf",
                                     "/auth/oauth2/jwks",
                                     "/oauth2/nonce",
                                     "/actuator/health",
@@ -62,6 +72,23 @@ public class SecurityConfig {
 
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    private boolean requiresRefreshCookieCsrfProtection(HttpServletRequest request) {
+        if (!CsrfFilter.DEFAULT_CSRF_MATCHER.matches(request)
+                || !StringUtils.hasText(authCookieService.readRefreshToken(request))) {
+            return false;
+        }
+        String requestPath = pathWithinApplication(request);
+        return "/auth/refresh".equals(requestPath) || "/auth/logout".equals(requestPath);
+    }
+
+    private String pathWithinApplication(HttpServletRequest request) {
+        String requestUri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        return StringUtils.hasLength(contextPath) && requestUri.startsWith(contextPath)
+                ? requestUri.substring(contextPath.length())
+                : requestUri;
     }
 
     @Bean

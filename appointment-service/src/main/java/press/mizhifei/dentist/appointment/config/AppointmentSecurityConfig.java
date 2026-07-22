@@ -19,7 +19,7 @@ public class AppointmentSecurityConfig {
             ServletJwtResourceServerCustomizer resourceServerCustomizer,
             @Value("${springdoc.api-docs.enabled:false}")
             boolean springdocEnabled) throws Exception {
-        http.csrf(csrf -> csrf.disable())
+        http.csrf(csrf -> csrf.ignoringRequestMatchers("/appointment/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(
                         SessionCreationPolicy.STATELESS))

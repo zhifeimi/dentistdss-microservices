@@ -59,7 +59,7 @@ class JwtAuthenticationFilterTest {
     @Test
     void skipsBearerValidationForRefreshCookieRecovery() {
         when(request.getMethod()).thenReturn("POST");
-        when(request.getServletPath()).thenReturn("/auth/refresh");
+        when(request.getRequestURI()).thenReturn("/auth/refresh");
 
         assertTrue(filter.shouldNotFilter(request));
     }

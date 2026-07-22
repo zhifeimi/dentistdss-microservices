@@ -4,6 +4,8 @@ import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.InvalidCsrfTokenException;
 import org.springframework.test.util.ReflectionTestUtils;
 import press.mizhifei.dentist.auth.dto.SessionTokens;
@@ -13,6 +15,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -71,6 +74,24 @@ class AuthCookieServiceTest {
 
         assertEquals("development-token", cookieService(false, "Lax").readRefreshToken(request));
         assertEquals("secure-token", cookieService(true, "None").readRefreshToken(request));
+    }
+
+    @Test
+    void springCsrfRepositoryUsesTheExistingXsrfCookieContract() {
+        AuthCookieService service = cookieService(false, "Lax");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        CsrfToken token = service.csrfTokenRepository().generateToken(request);
+
+        service.csrfTokenRepository().saveToken(token, request, response);
+
+        Cookie cookie = response.getCookie(AuthCookieService.CSRF_COOKIE);
+        assertNotNull(cookie);
+        assertEquals(AuthCookieService.CSRF_COOKIE, cookie.getName());
+        assertFalse(cookie.isHttpOnly());
+        assertFalse(cookie.getSecure());
+        assertEquals("Lax", cookie.getAttribute("SameSite"));
+        assertEquals("/", cookie.getPath());
     }
 
     @Test

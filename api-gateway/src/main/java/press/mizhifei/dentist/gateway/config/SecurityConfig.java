@@ -60,6 +60,7 @@ public class SecurityConfig {
                                     "/actuator/health/**",
                                     "/api/clinic/list/all",
                                     "/api/clinic/search",
+                                    "/api/auth/csrf",
                                     "/api/auth/oauth2/jwks",
                                     "/oauth2/nonce")
                             .permitAll();

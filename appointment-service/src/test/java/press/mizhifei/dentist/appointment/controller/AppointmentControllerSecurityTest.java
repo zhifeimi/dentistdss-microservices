@@ -6,6 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -19,6 +20,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import press.mizhifei.dentist.appointment.config.AppointmentSecurityConfig;
+import press.mizhifei.dentist.appointment.dto.AppointmentResponse;
 import press.mizhifei.dentist.appointment.security.AppointmentActor;
 import press.mizhifei.dentist.appointment.service.AppointmentService;
 import press.mizhifei.dentist.security.RedisAccessTokenJwtDecoder;
@@ -103,6 +105,30 @@ class AppointmentControllerSecurityTest {
         verify(appointmentService).getPatientAppointments(
                 eq(42L),
                 argThat(actor -> actor.userId() == 42L
+                        && actor.roles().equals(java.util.Set.of("PATIENT"))
+                        && actor.clinicId() == null));
+    }
+
+    @Test
+    void patientMutationReachesServiceWithoutCsrfToken() throws Exception {
+        when(appointmentService.cancelAppointment(
+                eq(100L),
+                eq("Schedule changed"),
+                argThat((AppointmentActor actor) -> actor.userId() == 42L
+                        && actor.roles().equals(java.util.Set.of("PATIENT"))
+                        && actor.clinicId() == null)))
+                .thenReturn(AppointmentResponse.builder().id(100L).build());
+
+        mockMvc.perform(patch("/appointment/{id}/cancel", 100L)
+                        .with(patientJwt())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Schedule changed\"}"))
+                .andExpect(status().isOk());
+
+        verify(appointmentService).cancelAppointment(
+                eq(100L),
+                eq("Schedule changed"),
+                argThat((AppointmentActor actor) -> actor.userId() == 42L
                         && actor.roles().equals(java.util.Set.of("PATIENT"))
                         && actor.clinicId() == null));
     }

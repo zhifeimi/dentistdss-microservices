@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.DefaultCsrfToken;
 import org.springframework.security.web.csrf.InvalidCsrfTokenException;
 import org.springframework.stereotype.Service;
@@ -76,6 +77,17 @@ public class AuthCookieService {
                     cookieValue == null ? "" : cookieValue);
             throw new InvalidCsrfTokenException(expectedToken, headerValue);
         }
+    }
+
+    public CookieCsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookieName(CSRF_COOKIE);
+        repository.setHeaderName(CSRF_HEADER);
+        repository.setCookiePath("/");
+        repository.setCookieCustomizer(cookie -> cookie
+                .secure(secure)
+                .sameSite(sameSite));
+        return repository;
     }
 
     private String refreshCookieName() {

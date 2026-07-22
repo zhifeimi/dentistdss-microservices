@@ -5,12 +5,14 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AccountStatusException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -49,6 +51,14 @@ public class AuthController {
     private final AuthSessionService authSessionService;
     private final AuthCookieService authCookieService;
     private final SecurityStateService securityStateService;
+
+    @GetMapping("/csrf")
+    public ResponseEntity<Void> csrf(CsrfToken csrfToken) {
+        return ResponseEntity.noContent()
+                .header(AuthCookieService.CSRF_HEADER, csrfToken.getToken())
+                .cacheControl(CacheControl.noStore())
+                .build();
+    }
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> authenticateUser(
