@@ -23,15 +23,19 @@ public class Conversation {
     private String id;
     private String sessionId;
     private String userId;
-    private String agent; // help, receptionist, aidentist
+    private String clinicId;
+    private String agent; // help, receptionist, aidentist, triage, documentation
     private List<Message> messages;
     private Instant createdAt = Instant.now();
+    private Instant updatedAt = Instant.now();
 
     @Data
     @NoArgsConstructor
     public static class Message {
         private String role; // user | assistant
         private String content;
+        private String turnId;
+        private InteractionStatus status;
         private Instant timestamp = Instant.now();
     }
 } 

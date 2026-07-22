@@ -13,6 +13,7 @@ externalSecrets:
   storeName: homelab-vault-dentistdss
   tokenSecretName: vault-dentistdss-token
   runtimePath: apps/dentistdss/dev/runtime
+  genaiServiceAuthPath: apps/dentistdss/dev/genai-service-auth
 
 persistence:
   storageClass: local-path
@@ -108,12 +109,18 @@ services:
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   clinical-records-service:
     port: 8090
     replicas: 1
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   admin-server:
     port: 9090
     replicas: 1

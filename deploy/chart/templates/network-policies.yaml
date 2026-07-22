@@ -9,16 +9,62 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-namespace-internal
+  name: allow-namespace-internal-ingress
 spec:
-  podSelector: {}
-  policyTypes: ["Ingress", "Egress"]
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values: ["genai-service"]
+  policyTypes: ["Ingress"]
   ingress:
     - from:
         - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-namespace-internal-ingress-unlabeled
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: DoesNotExist
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-namespace-internal-egress
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
   egress:
     - to:
         - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-genai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api-gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8084
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

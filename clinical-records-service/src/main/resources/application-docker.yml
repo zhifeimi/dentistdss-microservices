@@ -10,6 +10,17 @@ spring:
     name: clinical-records-service
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/dentistdss}
     username: dentistdss
@@ -35,10 +46,13 @@ spring:
         order_inserts: true
         order_updates: true
         batch_versioned_data: true
-  data:
-    mongodb:
-      uri: ${MONGODB_URI:mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss_files?authSource=admin}
-      database: dentistdss
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss_files?authSource=admin}
+    database: dentistdss
+
+jwt:
+  issuer: ${JWT_ISSUER:http://api-gateway:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
 
 # =============================================================================
 # Service Discovery Configuration

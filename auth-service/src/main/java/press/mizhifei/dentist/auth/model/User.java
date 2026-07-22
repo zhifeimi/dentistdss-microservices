@@ -113,7 +113,11 @@ public class User {
 
     @Builder.Default
     private boolean enabled = false;
-    
+
+    @Column(name = "security_version", nullable = false, columnDefinition = "BIGINT DEFAULT 1")
+    @Builder.Default
+    private long securityVersion = 1L;
+
     @Column(name = "account_non_expired")
     @Builder.Default
     private boolean accountNonExpired = true;
@@ -147,6 +151,9 @@ public class User {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (securityVersion <= 0) {
+            securityVersion = 1L;
+        }
         trimFields();
     }
     
@@ -177,6 +184,13 @@ public class User {
         PENDING,
         APPROVED,
         REJECTED
+    }
+
+    public void incrementSecurityVersion() {
+        if (securityVersion <= 0 || securityVersion == Long.MAX_VALUE) {
+            throw new IllegalStateException("Invalid user security version");
+        }
+        securityVersion++;
     }
 
     public UserResponse toUserResponse() {

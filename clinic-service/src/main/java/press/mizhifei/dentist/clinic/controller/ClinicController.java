@@ -1,5 +1,6 @@
 package press.mizhifei.dentist.clinic.controller;
 
+import feign.FeignException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PatchMapping;
 import press.mizhifei.dentist.clinic.client.AuthServiceClient;
 import press.mizhifei.dentist.clinic.dto.ApiResponse;
 import press.mizhifei.dentist.clinic.dto.ClinicResponse;
@@ -69,12 +69,6 @@ public class ClinicController {
     }
 
     // update clinic info
-
-    @PatchMapping("/{id}/approve")
-    public ResponseEntity<ApiResponse<ClinicResponse>> approveClinic(@PathVariable Long id) {
-        ClinicResponse response = clinicService.approveClinic(id);
-        return ResponseEntity.ok(ApiResponse.success(response));
-    }
 
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<ClinicResponse>> updateClinic(
@@ -155,8 +149,24 @@ public class ClinicController {
             log.debug("Returning {} patients for clinic {}", patients.size(), clinicId);
             return ResponseEntity.ok(ApiResponse.success(patients));
 
+        } catch (FeignException e) {
+            if (e.status() == 401) {
+                return ResponseEntity.status(401)
+                        .body(ApiResponse.error("Authentication required"));
+            }
+            if (e.status() == 403) {
+                return ResponseEntity.status(403)
+                        .body(ApiResponse.error("Access denied"));
+            }
+            if (e.status() == 503) {
+                return ResponseEntity.status(503)
+                        .body(ApiResponse.error("Appointment service is temporarily unavailable"));
+            }
+            log.error("Appointment service request failed for clinic {}", clinicId);
+            return ResponseEntity.status(502)
+                    .body(ApiResponse.error("Appointment service request failed"));
         } catch (Exception e) {
-            log.error("Error getting patients for clinic {}: {}", clinicId, e.getMessage(), e);
+            log.error("Error getting patients for clinic {}", clinicId, e);
             return ResponseEntity.status(500)
                     .body(ApiResponse.error("Internal server error"));
         }

@@ -47,3 +47,33 @@ spec:
   dataFrom:
     - extract:
         key: {{ .Values.externalSecrets.runtimePath | quote }}
+{{ if index .Values.services "genai-service" "enabled" }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dentistdss-genai-service-auth
+  labels:
+    {{- include "dentistdss.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: homelab-vault
+  target:
+    name: dentistdss-genai-service-auth
+    creationPolicy: Owner
+  data:
+    - secretKey: GENAI_SERVICE_AUTH_PRIVATE_KEY
+      remoteRef:
+        key: {{ .Values.externalSecrets.genaiServiceAuthPath | quote }}
+        property: GENAI_SERVICE_AUTH_PRIVATE_KEY
+    - secretKey: GENAI_SERVICE_AUTH_PUBLIC_KEY
+      remoteRef:
+        key: {{ .Values.externalSecrets.genaiServiceAuthPath | quote }}
+        property: GENAI_SERVICE_AUTH_PUBLIC_KEY
+    - secretKey: GENAI_SERVICE_AUTH_KEY_ID
+      remoteRef:
+        key: {{ .Values.externalSecrets.genaiServiceAuthPath | quote }}
+        property: GENAI_SERVICE_AUTH_KEY_ID
+{{ end }}

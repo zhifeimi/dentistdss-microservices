@@ -1,5 +1,6 @@
 package press.mizhifei.dentist.clinic.service;
 
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -95,16 +96,6 @@ public class ClinicService {
     }
 
     @Transactional
-    public ClinicResponse approveClinic(Long id) {
-        Clinic clinic = clinicRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + id));
-        clinic.setApproved(true);
-        clinic.setEnabled(true);
-        Clinic saved = clinicRepository.save(clinic);
-        return convertToDto(saved);
-    }
-
-    @Transactional
     public ClinicResponse updateClinic(Long id, ClinicUpdateRequest request) {
         Clinic clinic = clinicRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + id));
@@ -165,6 +156,7 @@ public class ClinicService {
                 patientIds = new ArrayList<>();
             }
         } catch (Exception e) {
+            rethrowAppointmentSecurityFailure(e);
             log.error("Error calling appointment service for clinic {}: {}", clinicId, e.getMessage());
             patientIds = new ArrayList<>();
         }
@@ -238,6 +230,7 @@ public class ClinicService {
                 lastVisit = lastResponse.getDataObject().get(0).getAppointmentDate();
             }
         } catch (Exception e) {
+            rethrowAppointmentSecurityFailure(e);
             log.warn("Failed to get last appointment for patient {} in clinic {}: {}",
                     patient.getId(), clinicId, e.getMessage());
         }
@@ -253,6 +246,7 @@ public class ClinicService {
                 nextAppointment = LocalDateTime.of(next.getAppointmentDate(), next.getStartTime());
             }
         } catch (Exception e) {
+            rethrowAppointmentSecurityFailure(e);
             log.warn("Failed to get upcoming appointment for patient {} in clinic {}: {}",
                     patient.getId(), clinicId, e.getMessage());
         }
@@ -268,6 +262,15 @@ public class ClinicService {
                 .lastVisit(lastVisit)
                 .nextAppointment(nextAppointment)
                 .build();
+    }
+
+    private void rethrowAppointmentSecurityFailure(Exception exception) {
+        if (exception instanceof FeignException feignException
+                && (feignException.status() == 401
+                || feignException.status() == 403
+                || feignException.status() == 503)) {
+            throw feignException;
+        }
     }
 
     private Comparator<PatientWithAppointmentResponse> createPatientComparator() {

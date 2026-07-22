@@ -15,6 +15,12 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: ${AUTH_SERVICE_URL:http://localhost:8081}/auth/oauth2/jwks
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
   cloud:
     gateway:
       # =============================================================================
@@ -29,7 +35,6 @@ spring:
                   - "http://localhost:3000"
                   - "https://dentistdss.vercel.app"
                   - "https://dentistgpt.vercel.app"
-                  - "https://accounts.google.com"
                 allowedMethods:
                   - GET
                   - POST
@@ -38,11 +43,18 @@ spring:
                   - OPTIONS
                   - PATCH
                   - HEAD
-                allowedHeaders: "*"
+                allowedHeaders:
+                  - "Authorization"
+                  - "Content-Type"
+                  - "Accept"
+                  - "Cache-Control"
+                  - "Last-Event-ID"
+                  - "X-XSRF-TOKEN"
+                  - "X-Session-ID"
                 allowCredentials: true
                 exposedHeaders:
-                  - "Authorization"
                   - "X-Session-ID"
+                  - "X-XSRF-TOKEN"
                 maxAge: 3600
           routes:
             # =============================================================================
@@ -57,21 +69,13 @@ spring:
               filters:
                 - StripPrefix=1
 
-            # OAuth2 endpoints - now handled by auth-service (OAuth2 standard endpoints)
-            - id: auth-service-oauth2-standard-paths
+            # Google ID-token exchange endpoints
+            - id: auth-service-oauth2
               uri: lb://auth-service
               predicates:
-                - Path=/login/oauth2/**, /oauth2/**
+                - Path=/oauth2/**
               filters:
                 - StripPrefix=0
-
-            # OAuth2 endpoints - now handled by auth-service (Custom API endpoints with /api prefix)
-            - id: auth-service-oauth2-api
-              uri: lb://auth-service
-              predicates:
-                - Path=/api/oauth2/**
-              filters:
-                - StripPrefix=1
 
             # =============================================================================
             # Business Domain Services
@@ -161,14 +165,6 @@ spring:
               filters:
                 - StripPrefix=1
 
-            # Admin Server (Spring Boot Admin)
-            - id: admin-server
-              uri: lb://admin-server
-              predicates:
-                - Path=/admin, /admin/**
-              filters:
-                - StripPrefix=0
-
             # =============================================================================
             # OpenAPI Documentation Routes (Development Only)
             # =============================================================================
@@ -250,6 +246,35 @@ spring:
       # =============================================================================
 
 # =============================================================================
+# JWT and Session Security
+# =============================================================================
+jwt:
+  issuer: ${JWT_ISSUER:http://localhost:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
+
+app:
+  security:
+    genai-service-auth:
+      private-key: ${GENAI_SERVICE_AUTH_PRIVATE_KEY:}
+      public-key: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:}
+      key-id: ${GENAI_SERVICE_AUTH_KEY_ID:}
+    anonymous-session:
+      namespace: ${ANONYMOUS_SESSION_NAMESPACE:local}
+      ttl: ${ANONYMOUS_SESSION_TTL:PT24H}
+      proof-ttl: ${ANONYMOUS_SESSION_PROOF_TTL:PT30S}
+    anonymous-session-proof-issuance:
+      source-limit: ${ANONYMOUS_SESSION_PROOF_SOURCE_LIMIT:60}
+      global-limit: ${ANONYMOUS_SESSION_PROOF_GLOBAL_LIMIT:5000}
+      window: ${ANONYMOUS_SESSION_PROOF_WINDOW:PT1M}
+    anonymous-session-issuance:
+      source-limit: ${ANONYMOUS_SESSION_ISSUANCE_SOURCE_LIMIT:20}
+      global-limit: ${ANONYMOUS_SESSION_ISSUANCE_GLOBAL_LIMIT:500}
+      window: ${ANONYMOUS_SESSION_ISSUANCE_WINDOW:PT10M}
+      fingerprint-key: ${ANONYMOUS_SESSION_FINGERPRINT_KEY:local-development-fingerprint-key-change-me}
+      # Keep zero unless every direct gateway caller is a trusted proxy that appends X-Forwarded-For.
+      trusted-proxy-count: ${ANONYMOUS_SESSION_TRUSTED_PROXY_COUNT:0}
+
+# =============================================================================
 # Service Discovery Configuration
 # =============================================================================
 eureka:
@@ -295,16 +320,6 @@ springdoc:
         url: /notification-service/v3/api-docs
 
 # =============================================================================
-# Server Configuration
-# =============================================================================
-# Configure reactor netty server to use virtual threads if running on Java 21+
-reactor:
-  netty:
-    http:
-      server:
-        accessLogEnabled: true
-
-# =============================================================================
 # Logging Configuration
 # =============================================================================
 logging:
@@ -324,7 +339,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway,refresh
+        include: health,info,gateway
   endpoint:
     health:
       show-details: always

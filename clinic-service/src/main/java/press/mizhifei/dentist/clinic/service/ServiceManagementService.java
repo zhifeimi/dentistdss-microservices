@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.clinic.dto.ServiceRequest;
 import press.mizhifei.dentist.clinic.dto.ServiceResponse;
+import press.mizhifei.dentist.clinic.exception.ServiceNotFoundException;
 import press.mizhifei.dentist.clinic.repository.ClinicRepository;
 import press.mizhifei.dentist.clinic.repository.ServiceRepository;
 
@@ -52,7 +53,7 @@ public class ServiceManagementService {
     @Transactional
     public ServiceResponse updateService(Integer id, ServiceRequest request) {
         press.mizhifei.dentist.clinic.model.Service service = serviceRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Service not found"));
+                .orElseThrow(() -> new ServiceNotFoundException());
         
         service.setName(request.getName());
         service.setDescription(request.getDescription());
@@ -70,7 +71,7 @@ public class ServiceManagementService {
     @Transactional
     public void deleteService(Integer id) {
         press.mizhifei.dentist.clinic.model.Service service = serviceRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Service not found"));
+                .orElseThrow(() -> new ServiceNotFoundException());
         
         // Soft delete by deactivating
         service.setIsActive(false);
@@ -81,7 +82,7 @@ public class ServiceManagementService {
     @Transactional(readOnly = true)
     public ServiceResponse getService(Integer id) {
         press.mizhifei.dentist.clinic.model.Service service = serviceRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Service not found"));
+                .orElseThrow(() -> new ServiceNotFoundException());
         
         return toResponse(service);
     }

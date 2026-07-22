@@ -6,6 +6,11 @@ spring:
     name: notification-service
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
 
   datasource:
     url: jdbc:postgresql://postgres:5432/dentistdss
@@ -36,6 +41,10 @@ spring:
           timeout: 5000
           writetimeout: 5000
 
+jwt:
+  issuer: ${JWT_ISSUER:http://api-gateway:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
+
 eureka:
   client:
     serviceUrl:
@@ -53,7 +62,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues

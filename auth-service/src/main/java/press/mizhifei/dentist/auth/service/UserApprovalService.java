@@ -2,11 +2,14 @@ package press.mizhifei.dentist.auth.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.ApprovalRequestResponse;
 import press.mizhifei.dentist.auth.dto.ReviewApprovalRequest;
+import press.mizhifei.dentist.auth.model.AuthProvider;
 import press.mizhifei.dentist.auth.model.Clinic;
 import press.mizhifei.dentist.auth.model.Role;
 import press.mizhifei.dentist.auth.model.User;
@@ -21,6 +24,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -40,24 +44,45 @@ public class UserApprovalService {
     private final UserRepository userRepository;
     private final ClinicRepository clinicRepository;
     private final NotificationServiceClient notificationServiceClient;
+    private final AuthSessionService authSessionService;
+
+    @Transactional(readOnly = true)
+    public boolean hasMatchingPendingApprovalRequest(
+            Long userId,
+            Role requestedRole,
+            Long clinicId) {
+        return hasMatchingApprovalRequest(
+                userId, requestedRole, clinicId, User.ApprovalStatus.PENDING);
+    }
+
+    private boolean hasMatchingApprovalRequest(
+            Long userId,
+            Role requestedRole,
+            Long clinicId,
+            User.ApprovalStatus status) {
+        return approvalRequestRepository.findByUserIdAndStatus(userId, status.toString())
+                .filter(request -> request.getRequestedRole() == requestedRole)
+                .filter(request -> Objects.equals(request.getClinicId(), clinicId))
+                .isPresent();
+    }
 
     @Transactional
     public ApiResponse<ApprovalRequestResponse> createApprovalRequest(Long userId, String requestReason) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        // Check if there's already a pending request
-        Optional<UserApprovalRequest> existingRequest = approvalRequestRepository
-                .findByUserIdAndStatus(userId, User.ApprovalStatus.PENDING.toString());
-
-        if (existingRequest.isPresent()) {
-            return ApiResponse.error("Approval request already exists. Please wait for the review.");
-        }
-
-        // Determine requested role based on user's current roles
         Role requestedRole = determineRequestedRole(user);
 
-        // Create and save the approval request using JPA
+        Optional<UserApprovalRequest> existingRequest = approvalRequestRepository
+                .findByUserIdAndStatus(userId, User.ApprovalStatus.PENDING.toString());
+        if (existingRequest.isPresent()) {
+            UserApprovalRequest request = existingRequest.get();
+            if (request.getRequestedRole() != requestedRole
+                    || !Objects.equals(request.getClinicId(), user.getClinicId())) {
+                return ApiResponse.error("Unable to create approval request");
+            }
+            return ApiResponse.success(toResponse(request));
+        }
+
         UserApprovalRequest approvalRequest = UserApprovalRequest.builder()
                 .userId(userId)
                 .requestedRole(requestedRole)
@@ -67,8 +92,6 @@ public class UserApprovalService {
                 .build();
 
         UserApprovalRequest saved = approvalRequestRepository.save(approvalRequest);
-
-        // Send notification to approvers
         sendApprovalNotification(user, requestedRole);
 
         log.info("Created approval request {} for user {} requesting role {}",
@@ -77,73 +100,140 @@ public class UserApprovalService {
         return ApiResponse.success(toResponse(saved));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public ApiResponse<ApprovalRequestResponse> reviewApprovalRequest(Integer requestId,
             ReviewApprovalRequest reviewRequest,
             Long reviewedBy) {
         UserApprovalRequest approvalRequest = approvalRequestRepository.findById(requestId)
                 .orElseThrow(() -> new IllegalArgumentException("Approval request not found"));
 
-        if (approvalRequest.getStatus() != User.ApprovalStatus.PENDING) {
+        if (approvalRequest.getStatus() != User.ApprovalStatus.PENDING
+                || approvalRequest.getRequestedRole() == Role.PATIENT) {
             return ApiResponse.error("No pending approval request found");
         }
 
         User user = userRepository.findById(approvalRequest.getUserId())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        User reviewer = userRepository.findById(reviewedBy)
+                .orElseThrow(() -> new IllegalArgumentException("Reviewer not found"));
+        if (Objects.equals(user.getId(), reviewer.getId())
+                || !isAuthorizedReviewer(reviewer, approvalRequest)
+                || !isPendingApprovalApplicant(user, approvalRequest)) {
+            return ApiResponse.error("Unable to review approval request");
+        }
 
-        // Update approval request using the new method
-        User.ApprovalStatus newStatus = reviewRequest.getApproved() ?
-                User.ApprovalStatus.APPROVED :
-                User.ApprovalStatus.REJECTED;
+        Clinic clinicToApprove = null;
+        if (approvalRequest.getRequestedRole() == Role.CLINIC_ADMIN) {
+            clinicToApprove = findPendingOwnedClinic(user, approvalRequest);
+            if (clinicToApprove == null) {
+                return ApiResponse.error("Unable to review approval request");
+            }
+        } else if (!isActiveStaffClinic(approvalRequest, reviewer)) {
+            return ApiResponse.error("Unable to review approval request");
+        }
 
-        approvalRequestRepository.updateApprovalStatus(
-                requestId,
-                newStatus.toString(),
-                reviewRequest.getReviewNotes(),
-                reviewedBy
-        );
+        LocalDateTime reviewedAt = LocalDateTime.now();
+        User.ApprovalStatus newStatus = reviewRequest.getApproved()
+                ? User.ApprovalStatus.APPROVED
+                : User.ApprovalStatus.REJECTED;
+        approvalRequest.setStatus(newStatus);
+        approvalRequest.setReviewNotes(reviewRequest.getReviewNotes());
+        approvalRequest.setReviewedBy(reviewedBy);
+        approvalRequest.setReviewedAt(reviewedAt);
+        if (!reviewRequest.getApproved() && clinicToApprove != null) {
+            // Release the clinic foreign key before deleting the rejected pending clinic.
+            approvalRequest.setClinicId(null);
+        }
+        UserApprovalRequest updatedRequest = approvalRequestRepository.save(approvalRequest);
 
-        // Fetch the updated request
-        UserApprovalRequest updatedRequest = approvalRequestRepository.findById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("Approval request not found after update"));
-
-        // Update user if approved
         if (reviewRequest.getApproved()) {
             user.setApprovalStatus(User.ApprovalStatus.APPROVED);
             user.setApprovedBy(reviewedBy.toString());
-            user.setApprovalDate(LocalDateTime.now());
+            user.setApprovalDate(reviewedAt);
+            user.setApprovalRejectionReason(null);
             user.setEnabled(true);
-
-            // For staff roles, ensure they have the correct role
-            if (approvalRequest.getRequestedRole() != Role.PATIENT) {
-                user.getRoles().add(approvalRequest.getRequestedRole());
-            }
         } else {
             user.setApprovalStatus(User.ApprovalStatus.REJECTED);
+            user.setApprovedBy(null);
+            user.setApprovalDate(null);
             user.setApprovalRejectionReason(reviewRequest.getReviewNotes());
+            user.setEnabled(false);
+            if (clinicToApprove != null) {
+                user.setClinicId(null);
+                user.setClinicName(null);
+            }
+        }
+        authSessionService.publishSecurityChangeAndRevokeAll(user);
+        userRepository.save(user);
+
+        if (clinicToApprove != null) {
+            if (reviewRequest.getApproved()) {
+                clinicToApprove.setApprovalBy(reviewedBy);
+                clinicToApprove.setApprovalDate(reviewedAt);
+                clinicToApprove.setApproved(true);
+                clinicToApprove.setEnabled(true);
+                clinicRepository.save(clinicToApprove);
+            } else {
+                clinicRepository.delete(clinicToApprove);
+            }
         }
 
-
-        // if user is clinic admin, approve and enable clinic info
-        if (user.getRoles().contains(Role.CLINIC_ADMIN) && reviewRequest.getApproved()) {
-            Clinic clinic = clinicRepository.findById(approvalRequest.getClinicId())
-                    .orElseThrow(() -> new IllegalArgumentException("Clinic not found"));
-            clinic.setApproved(true);
-            clinic.setApprovalBy(reviewedBy);
-            clinic.setApprovalDate(LocalDateTime.now());
-            clinic.setEnabled(true);
-            clinicRepository.save(clinic);
-            userRepository.save(user);
-        }
-
-        // Send notification to user
-        sendApprovalResultNotification(user, reviewRequest.getApproved(), reviewRequest.getReviewNotes());
+        sendApprovalResultNotification(
+                user, reviewRequest.getApproved(), reviewRequest.getReviewNotes());
 
         log.info("Reviewed approval request {} for user {} - {}",
                 requestId, approvalRequest.getUserId(),
                 reviewRequest.getApproved() ? "APPROVED" : "REJECTED");
 
         return ApiResponse.success(toResponse(updatedRequest));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApprovalRequestResponse> getPendingApprovalRequestsForReviewer(
+            Long reviewerId) {
+        User reviewer = requireActiveReviewer(reviewerId);
+        if (hasOnlyRole(reviewer, Role.SYSTEM_ADMIN)) {
+            return getPendingApprovalRequests();
+        }
+        if (hasOnlyRole(reviewer, Role.CLINIC_ADMIN)
+                && reviewer.getClinicId() != null
+                && reviewer.getApprovalStatus() == User.ApprovalStatus.APPROVED
+                && isActiveStaffClinicReviewer(reviewer)) {
+            return approvalRequestRepository
+                    .findByClinicIdAndStatusOrderByCreatedAtDesc(
+                            reviewer.getClinicId(),
+                            User.ApprovalStatus.PENDING.toString())
+                    .stream()
+                    .filter(request -> request.getRequestedRole() == Role.DENTIST
+                            || request.getRequestedRole() == Role.RECEPTIONIST)
+                    .map(this::toResponse)
+                    .collect(Collectors.toList());
+        }
+        throw new AccessDeniedException("Approval access denied");
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApprovalRequestResponse> getClinicPendingApprovals(
+            Long clinicId,
+            Long reviewerId) {
+        User reviewer = requireActiveReviewer(reviewerId);
+        if (hasOnlyRole(reviewer, Role.SYSTEM_ADMIN)) {
+            return getClinicPendingApprovals(clinicId);
+        }
+        if (!hasOnlyRole(reviewer, Role.CLINIC_ADMIN)
+                || !Objects.equals(reviewer.getClinicId(), clinicId)
+                || reviewer.getApprovalStatus() != User.ApprovalStatus.APPROVED
+                || !isActiveStaffClinicReviewer(reviewer)) {
+            throw new AccessDeniedException("Approval access denied");
+        }
+        return approvalRequestRepository
+                .findByClinicIdAndStatusOrderByCreatedAtDesc(
+                        clinicId, User.ApprovalStatus.PENDING.toString())
+                .stream()
+                .filter(request -> request.getRequestedRole() == Role.DENTIST
+                        || request.getRequestedRole() == Role.RECEPTIONIST)
+                .map(this::toResponse)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -207,6 +297,123 @@ public class UserApprovalService {
         return requests.stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    private boolean isPendingApprovalApplicant(
+            User user,
+            UserApprovalRequest approvalRequest) {
+        return user.getId() != null
+                && Objects.equals(user.getId(), approvalRequest.getUserId())
+                && !user.isEnabled()
+                && user.isEmailVerified()
+                && user.getProvider() == AuthProvider.LOCAL
+                && user.getProviderId() == null
+                && user.getPassword() != null
+                && !user.getPassword().isBlank()
+                && hasOnlyRole(user, approvalRequest.getRequestedRole())
+                && Objects.equals(user.getClinicId(), approvalRequest.getClinicId())
+                && user.getApprovalStatus() == User.ApprovalStatus.PENDING
+                && user.getApprovedBy() == null
+                && user.getApprovalDate() == null
+                && user.getApprovalRejectionReason() == null
+                && user.isAccountNonExpired()
+                && user.isCredentialsNonExpired()
+                && user.isAccountNonLocked();
+    }
+
+    private boolean isAuthorizedReviewer(
+            User reviewer,
+            UserApprovalRequest approvalRequest) {
+        if (!isActiveReviewerAccount(reviewer)) {
+            return false;
+        }
+        if (approvalRequest.getRequestedRole() == Role.CLINIC_ADMIN) {
+            return hasOnlyRole(reviewer, Role.SYSTEM_ADMIN);
+        }
+        if (approvalRequest.getRequestedRole() == Role.DENTIST
+                || approvalRequest.getRequestedRole() == Role.RECEPTIONIST) {
+            return hasOnlyRole(reviewer, Role.CLINIC_ADMIN)
+                    && reviewer.getApprovalStatus() == User.ApprovalStatus.APPROVED
+                    && reviewer.getApprovedBy() != null
+                    && reviewer.getApprovalDate() != null
+                    && Objects.equals(
+                            reviewer.getClinicId(), approvalRequest.getClinicId());
+        }
+        return false;
+    }
+
+    private User requireActiveReviewer(Long reviewerId) {
+        User reviewer = userRepository.findById(reviewerId)
+                .orElseThrow(() -> new AccessDeniedException("Approval access denied"));
+        if (!isActiveReviewerAccount(reviewer)) {
+            throw new AccessDeniedException("Approval access denied");
+        }
+        return reviewer;
+    }
+
+    private boolean isActiveReviewerAccount(User reviewer) {
+        return reviewer.getId() != null
+                && reviewer.isEnabled()
+                && reviewer.isEmailVerified()
+                && reviewer.getRoles() != null
+                && reviewer.isAccountNonExpired()
+                && reviewer.isCredentialsNonExpired()
+                && reviewer.isAccountNonLocked();
+    }
+
+    private boolean isActiveStaffClinicReviewer(User reviewer) {
+        return reviewer.getClinicId() != null
+                && clinicRepository.findById(reviewer.getClinicId())
+                        .filter(clinic -> Boolean.TRUE.equals(clinic.getEnabled()))
+                        .filter(clinic -> Boolean.TRUE.equals(clinic.getApproved()))
+                        .filter(clinic -> clinic.getAdmin() != null)
+                        .filter(clinic -> Objects.equals(
+                                clinic.getAdmin().getId(), reviewer.getId()))
+                        .isPresent();
+    }
+
+    private Clinic findPendingOwnedClinic(
+            User user,
+            UserApprovalRequest approvalRequest) {
+        if (approvalRequest.getClinicId() == null) {
+            return null;
+        }
+        return clinicRepository.findById(approvalRequest.getClinicId())
+                .filter(clinic -> Boolean.FALSE.equals(clinic.getEnabled()))
+                .filter(clinic -> Boolean.FALSE.equals(clinic.getApproved()))
+                .filter(clinic -> clinic.getApprovalBy() == null)
+                .filter(clinic -> clinic.getApprovalDate() == null)
+                .filter(clinic -> clinic.getAdmin() != null)
+                .filter(clinic -> Objects.equals(
+                        clinic.getAdmin().getId(), user.getId()))
+                .orElse(null);
+    }
+
+    private boolean isActiveStaffClinic(
+            UserApprovalRequest approvalRequest,
+            User reviewer) {
+        if (approvalRequest.getClinicId() == null) {
+            return false;
+        }
+        return clinicRepository.findById(approvalRequest.getClinicId())
+                .filter(clinic -> Boolean.TRUE.equals(clinic.getEnabled()))
+                .filter(clinic -> Boolean.TRUE.equals(clinic.getApproved()))
+                .filter(clinic -> clinic.getAdmin() != null)
+                .filter(clinic -> Objects.equals(
+                        clinic.getAdmin().getId(), reviewer.getId()))
+                .filter(clinic -> Objects.equals(
+                        clinic.getAdmin().getClinicId(), clinic.getId()))
+                .filter(clinic -> clinic.getAdmin().isEnabled())
+                .filter(clinic -> clinic.getAdmin().isEmailVerified())
+                .filter(clinic -> clinic.getAdmin().getApprovalStatus()
+                        == User.ApprovalStatus.APPROVED)
+                .isPresent();
+    }
+
+    private boolean hasOnlyRole(User user, Role role) {
+        return user.getRoles() != null
+                && user.getRoles().size() == 1
+                && user.getRoles().contains(role);
     }
 
     private Role determineRequestedRole(User user) {

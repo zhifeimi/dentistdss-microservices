@@ -121,6 +121,9 @@ services:
       SERVER_PORT: "8080"
       SERVER_SSL_ENABLED: "false"
       AUTH_SERVICE_URL: http://auth-service:8081
+      GENAI_SERVICE_AUTH_PRIVATE_KEY: ${GENAI_SERVICE_AUTH_PRIVATE_KEY:-}
+      GENAI_SERVICE_AUTH_PUBLIC_KEY: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:-}
+      GENAI_SERVICE_AUTH_KEY_ID: ${GENAI_SERVICE_AUTH_KEY_ID:-}
     ports:
       - ${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8080}:8080
     healthcheck:
@@ -271,6 +274,10 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8089/actuator/health >/dev/null"]
@@ -295,6 +302,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss_files?authSource=admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8090/actuator/health >/dev/null"]
@@ -357,6 +368,8 @@ services:
       VERTEX_AI_PROJECT_ID: ${VERTEX_AI_PROJECT_ID:-}
       VERTEX_AI_LOCATION: ${VERTEX_AI_LOCATION:-australia-southeast1}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GENAI_SERVICE_AUTH_PUBLIC_KEY: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:-}
+      GENAI_SERVICE_AUTH_KEY_ID: ${GENAI_SERVICE_AUTH_KEY_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-service-account.json
     volumes:
       - ${GCP_CREDENTIALS_PATH:-./secrets/gcp-service-account.json}:/run/secrets/gcp-service-account.json:ro

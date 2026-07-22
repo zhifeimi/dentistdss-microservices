@@ -26,7 +26,9 @@ that tag before Argo CD can reconcile the application.
 Create these KV v2 records:
 
 - `kv/apps/dentistdss/dev/runtime`
+- `kv/apps/dentistdss/dev/genai-service-auth`
 - `kv/apps/dentistdss/prod/runtime`
+- `kv/apps/dentistdss/prod/genai-service-auth`
 
 Each environment requires a `vault-dentistdss-token` Secret in its application
 namespace. The token must have read access only to that environment's runtime
@@ -53,7 +55,19 @@ SPRING_DATA_MONGODB_URI
 MONGODB_URI
 ```
 
-Seed each record interactively without printing credentials:
+Each `genai-service-auth` record requires a dedicated gateway-to-GenAI key pair:
+
+```text
+GENAI_SERVICE_AUTH_PRIVATE_KEY
+GENAI_SERVICE_AUTH_PUBLIC_KEY
+GENAI_SERVICE_AUTH_KEY_ID
+```
+
+Use a single-line PKCS#8 private key and X.509 public key. The chart references
+all three values only from `api-gateway`; `genai-service` receives only the
+public key and key ID. Do not add these values to the broad runtime record.
+
+Seed each runtime record interactively without printing credentials:
 
 ```bash
 ./deploy/scripts/seed-vault-runtime.sh dev

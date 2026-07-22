@@ -103,6 +103,39 @@ spec:
                   name: dentistdss-runtime
                   key: SPRING_CONFIG_PASS
             {{- end }}
+            {{- if eq $name "api-gateway" }}
+            - name: GENAI_SERVICE_AUTH_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-genai-service-auth
+                  key: GENAI_SERVICE_AUTH_PRIVATE_KEY
+                  optional: true
+            - name: GENAI_SERVICE_AUTH_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-genai-service-auth
+                  key: GENAI_SERVICE_AUTH_PUBLIC_KEY
+                  optional: true
+            - name: GENAI_SERVICE_AUTH_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-genai-service-auth
+                  key: GENAI_SERVICE_AUTH_KEY_ID
+                  optional: true
+            {{- else if eq $name "genai-service" }}
+            - name: GENAI_SERVICE_AUTH_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-genai-service-auth
+                  key: GENAI_SERVICE_AUTH_PUBLIC_KEY
+                  optional: true
+            - name: GENAI_SERVICE_AUTH_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-genai-service-auth
+                  key: GENAI_SERVICE_AUTH_KEY_ID
+                  optional: true
+            {{- end }}
             {{- range $key, $value := $environment }}
             - name: {{ $key }}
               value: {{ $value | quote }}

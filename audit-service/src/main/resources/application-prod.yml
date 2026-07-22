@@ -7,16 +7,19 @@ spring:
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
 
-  data:
-    mongodb:
-      uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss?authSource=admin
-      database: dentistdss
+  mongodb:
+    uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss?authSource=admin
+    database: dentistdss
 
   security:
     oauth2:
       resourceserver:
         jwt:
           jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
+
+jwt:
+  issuer: ${JWT_ISSUER:https://api.mizhifei.press}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
 
 eureka:
   client:

@@ -26,6 +26,10 @@ spring:
         jwt:
           jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
 
+jwt:
+  issuer: ${JWT_ISSUER:https://api.mizhifei.press}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
+
 eureka:
   client:
     serviceUrl:

@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -39,7 +40,17 @@ public class AIInteraction {
     private String inputText;
     
     private String aiResponse;
-    
+
+    private InteractionStatus status;
+
+    private Instant terminalAt;
+
+    private String errorCode;
+
+    private String conversationId;
+
+    private String clinicId;
+
     private Integer tokensUsed;
     
     private Integer responseTimeMs;

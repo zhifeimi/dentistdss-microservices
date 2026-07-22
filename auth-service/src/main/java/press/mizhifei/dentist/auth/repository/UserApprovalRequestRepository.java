@@ -1,7 +1,6 @@
 package press.mizhifei.dentist.auth.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -33,17 +32,4 @@ public interface UserApprovalRequestRepository extends JpaRepository<UserApprova
     
     List<UserApprovalRequest> findByReviewedByOrderByReviewedAtDesc(Long reviewedBy);
     
-    @Modifying
-    @Query(nativeQuery = true, value = "UPDATE user_approval_requests SET " +
-            "status = CAST(:status AS approval_status), " +
-            "review_notes = :reviewNotes, " +
-            "reviewed_by = :reviewedBy, " +
-            "reviewed_at = NOW(), " +
-            "updated_at = NOW() " +
-            "WHERE id = :id")
-    void updateApprovalStatus(
-            @Param("id") Integer id,
-            @Param("status") String status,
-            @Param("reviewNotes") String reviewNotes,
-            @Param("reviewedBy") Long reviewedBy);
 } 

@@ -7,10 +7,9 @@ spring:
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
 
-  data:
-    mongodb:
-      uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss?authSource=admin
-      database: dentistdss
+  mongodb:
+    uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss?authSource=admin
+    database: dentistdss
 
   security:
     oauth2:
@@ -18,14 +17,16 @@ spring:
         jwt:
           jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
 
+jwt:
+  issuer: ${JWT_ISSUER:http://api-gateway:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
+
 eureka:
   client:
     serviceUrl:
       defaultZone: http://discovery-server:8761/eureka
   instance:
     preferIpAddress: false
-
-logging:
 
 # Management/Actuator Configuration
 management:
@@ -35,10 +36,12 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues
+
+logging:
   level:
     press.mizhifei.dentist: INFO
     org.springframework: INFO

@@ -9,6 +9,7 @@ import press.mizhifei.dentist.notification.model.NotificationStatus;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /**
  *
@@ -21,7 +22,9 @@ import java.util.List;
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
     
     List<Notification> findByUserIdOrderByCreatedAtDesc(Long userId);
-    
+
+    Optional<Notification> findByIdAndUserId(Long id, Long userId);
+
     List<Notification> findByUserIdAndStatusOrderByCreatedAtDesc(Long userId, NotificationStatus status);
     
     @Query("SELECT n FROM Notification n WHERE n.status = 'PENDING' " +

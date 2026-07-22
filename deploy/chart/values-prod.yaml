@@ -8,3 +8,4 @@ gateway:
 externalSecrets:
   vaultServer: https://10.80.0.13:8200
   runtimePath: apps/dentistdss/prod/runtime
+  genaiServiceAuthPath: apps/dentistdss/prod/genai-service-auth

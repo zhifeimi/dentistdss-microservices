@@ -8,6 +8,7 @@ gateway:
 externalSecrets:
   vaultServer: https://10.80.0.13:8200
   runtimePath: apps/dentistdss/dev/runtime
+  genaiServiceAuthPath: apps/dentistdss/dev/genai-service-auth
 
 commonEnv:
   JAVA_TOOL_OPTIONS: -Xms64m -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError
