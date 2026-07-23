@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -206,6 +207,33 @@ public class SecurityStateService {
         return Optional.empty();
     }
 
+    /**
+     * Batch-read used by outbox reconciliation: returns the families whose
+     * Redis state key is missing entirely. A missing key after a database
+     * revocation means the tombstone was never published (or was lost), while
+     * the gateway treats a missing key as "unavailable" and fails closed — so
+     * these families need their tombstones re-enqueued.
+     */
+    public List<FamilyRef> findFamiliesWithoutState(List<FamilyRef> families) {
+        if (families == null || families.isEmpty()) {
+            return List.of();
+        }
+        List<String> keys = families.stream()
+                .map(ref -> familyKey(ref.userId(), ref.familyId()))
+                .toList();
+        List<String> values = redisTemplate.opsForValue().multiGet(keys);
+        if (values == null || values.size() != keys.size()) {
+            throw new SecurityStateUnavailableException();
+        }
+        List<FamilyRef> missing = new java.util.ArrayList<>(families.size());
+        for (int index = 0; index < families.size(); index++) {
+            if (values.get(index) == null) {
+                missing.add(families.get(index));
+            }
+        }
+        return missing;
+    }
+
     public String randomToken(int bytes) {
         byte[] value = new byte[bytes];
         SECURE_RANDOM.nextBytes(value);
@@ -244,6 +272,9 @@ public class SecurityStateService {
     }
 
     public record AccountSecurityState(long securityVersion, boolean active) {
+    }
+
+    public record FamilyRef(long userId, String familyId) {
     }
 
     public enum FamilySecurityState {

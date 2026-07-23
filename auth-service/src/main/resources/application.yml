@@ -87,6 +87,20 @@ app:
     google-client-id: ${GOOGLE_CLIENT_ID}
   security:
     refresh-token-days: 30
+    # Durable outbox for Redis session-family tombstones. Every database
+    # revocation records a pending row before the synchronous publication is
+    # attempted; the replay worker retries failures and the sweep re-enqueues
+    # revoked families whose Redis state key is missing.
+    outbox:
+      enabled: ${SECURITY_OUTBOX_ENABLED:true}
+      replay-delay-ms: ${SECURITY_OUTBOX_REPLAY_DELAY_MS:30000}
+      replay-initial-delay-ms: ${SECURITY_OUTBOX_REPLAY_INITIAL_DELAY_MS:15000}
+      retry-backoff-ms: ${SECURITY_OUTBOX_RETRY_BACKOFF_MS:30000}
+      replay-batch-size: ${SECURITY_OUTBOX_REPLAY_BATCH_SIZE:100}
+      sweep-enabled: ${SECURITY_OUTBOX_SWEEP_ENABLED:true}
+      sweep-delay-ms: ${SECURITY_OUTBOX_SWEEP_DELAY_MS:300000}
+      sweep-initial-delay-ms: ${SECURITY_OUTBOX_SWEEP_INITIAL_DELAY_MS:60000}
+      sweep-batch-size: ${SECURITY_OUTBOX_SWEEP_BATCH_SIZE:500}
     cookies:
       secure: false
       same-site: Lax

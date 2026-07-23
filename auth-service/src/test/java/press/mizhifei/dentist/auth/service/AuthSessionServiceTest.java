@@ -49,6 +49,7 @@ class AuthSessionServiceTest {
     private UserRepository userRepository;
     private AuthSessionRepository sessionRepository;
     private AuthSessionRevocationService revocationService;
+    private SecurityStateOutboxService outboxService;
     private JwtTokenProvider tokenProvider;
     private SecurityStateService securityStateService;
     private AuthSessionService service;
@@ -61,6 +62,7 @@ class AuthSessionServiceTest {
         userRepository = mock(UserRepository.class);
         sessionRepository = mock(AuthSessionRepository.class);
         revocationService = mock(AuthSessionRevocationService.class);
+        outboxService = mock(SecurityStateOutboxService.class);
         tokenProvider = mock(JwtTokenProvider.class);
         securityStateService = mock(SecurityStateService.class);
         service = new AuthSessionService(
@@ -68,6 +70,7 @@ class AuthSessionServiceTest {
                 userRepository,
                 sessionRepository,
                 revocationService,
+                outboxService,
                 tokenProvider,
                 securityStateService);
         ReflectionTestUtils.setField(service, "refreshTokenDays", 30L);
@@ -333,11 +336,29 @@ class AuthSessionServiceTest {
         assertThrows(SecurityStateService.SecurityStateUnavailableException.class,
                 () -> service.revokeFamily(42L, "family-1"));
 
-        var ordered = inOrder(revocationService, securityStateService);
+        var ordered = inOrder(revocationService, outboxService, securityStateService);
         ordered.verify(revocationService).revokeFamily(
                 eq(42L), eq("family-1"), any(LocalDateTime.class));
+        // The durable outbox marker is recorded before the Redis publication
+        // is attempted, so the failed publication will be replayed.
+        ordered.verify(outboxService).enqueueStandalone(
+                eq(42L), eq("family-1"), any(LocalDateTime.class), any());
         ordered.verify(securityStateService).revokeFamily(
                 eq(42L), eq("family-1"), any());
+        verify(outboxService, never()).markPublished(anyLong(), anyString());
+    }
+
+    @Test
+    void logoutSuccessMarksTheOutboxMarkerPublished() {
+        service.revokeFamily(42L, "family-1");
+
+        var ordered = inOrder(revocationService, outboxService, securityStateService);
+        ordered.verify(revocationService).revokeFamily(
+                eq(42L), eq("family-1"), any(LocalDateTime.class));
+        ordered.verify(outboxService).enqueueStandalone(
+                eq(42L), eq("family-1"), any(LocalDateTime.class), any());
+        ordered.verify(securityStateService).revokeFamily(eq(42L), eq("family-1"), any());
+        ordered.verify(outboxService).markPublished(42L, "family-1");
     }
 
     @Test
@@ -352,11 +373,14 @@ class AuthSessionServiceTest {
         assertThrows(SecurityStateService.SecurityStateUnavailableException.class,
                 () -> service.revoke("logout-token"));
 
-        var ordered = inOrder(revocationService, securityStateService);
+        var ordered = inOrder(revocationService, outboxService, securityStateService);
         ordered.verify(revocationService).revokeFamily(
                 eq(42L), eq("logout-family"), any(LocalDateTime.class));
+        ordered.verify(outboxService).enqueueStandalone(
+                eq(42L), eq("logout-family"), any(LocalDateTime.class), any());
         ordered.verify(securityStateService).revokeFamily(
                 eq(42L), eq("logout-family"), any());
+        verify(outboxService, never()).markPublished(anyLong(), anyString());
     }
 
     @Test
@@ -375,6 +399,10 @@ class AuthSessionServiceTest {
         verify(sessionRepository).rotateIfActive(anyString(), any(), any(), anyString());
         verify(sessionRepository).revokeActiveByUserIdAndFamilyId(
                 eq(42L), eq("extension-failure-family"), any(LocalDateTime.class));
+        // Even with the extension failure suppressed, the outbox marker lets
+        // the replay worker finish the tombstone publication later.
+        verify(outboxService).enqueue(
+                eq(42L), eq("extension-failure-family"), any(LocalDateTime.class), any());
         verify(revocationService, never()).revokeFamily(anyLong(), anyString(), any());
         verify(sessionRepository, never()).save(any(AuthSession.class));
         verify(tokenProvider, never()).generateToken(any(), anyString());
@@ -419,11 +447,19 @@ class AuthSessionServiceTest {
         assertThrows(SecurityStateService.SecurityStateUnavailableException.class,
                 () -> service.revokeAllForUser(42L));
 
-        var ordered = inOrder(revocationService, securityStateService);
+        var ordered = inOrder(revocationService, outboxService, securityStateService);
         ordered.verify(revocationService).revokeAllForUser(
                 eq(42L), any(LocalDateTime.class));
+        // Both durable markers are recorded before any Redis publication runs.
+        ordered.verify(outboxService).enqueueStandalone(
+                eq(42L), eq("family-a"), any(LocalDateTime.class), any());
+        ordered.verify(outboxService).enqueueStandalone(
+                eq(42L), eq("family-b"), any(LocalDateTime.class), any());
         ordered.verify(securityStateService).revokeFamily(eq(42L), eq("family-a"), any());
         ordered.verify(securityStateService).revokeFamily(eq(42L), eq("family-b"), any());
+        // Only the successfully published family has its marker removed.
+        verify(outboxService, never()).markPublished(42L, "family-a");
+        verify(outboxService).markPublished(42L, "family-b");
     }
 
     @Test

@@ -40,6 +40,7 @@ public class AuthSessionService {
     private final UserRepository userRepository;
     private final AuthSessionRepository sessionRepository;
     private final AuthSessionRevocationService revocationService;
+    private final SecurityStateOutboxService outboxService;
     private final JwtTokenProvider tokenProvider;
     private final SecurityStateService securityStateService;
 
@@ -177,11 +178,16 @@ public class AuthSessionService {
     public void revokeAllForUser(Long userId) {
         LocalDateTime now = LocalDateTime.now();
         var familyIds = revocationService.revokeAllForUser(userId, now);
+        Duration tombstoneTtl = familyLifetime();
+        for (String familyId : familyIds) {
+            outboxService.enqueueStandalone(userId, familyId, now, tombstoneTtl);
+        }
 
         RuntimeException publicationFailure = null;
         for (String familyId : familyIds) {
             try {
                 publishFamilyTombstone(userId, familyId);
+                outboxService.markPublished(userId, familyId);
             } catch (RuntimeException ex) {
                 if (publicationFailure == null) {
                     publicationFailure = ex;
@@ -291,8 +297,10 @@ public class AuthSessionService {
             String familyId,
             LocalDateTime revokedAt) {
         revocationService.revokeFamily(userId, familyId, revokedAt);
+        outboxService.enqueueStandalone(userId, familyId, revokedAt, familyLifetime());
         try {
             publishFamilyTombstone(userId, familyId);
+            outboxService.markPublished(userId, familyId);
         } catch (RuntimeException ex) {
             throw stateUnavailable(ex);
         }
@@ -303,8 +311,10 @@ public class AuthSessionService {
             String familyId,
             LocalDateTime revokedAt) {
         sessionRepository.revokeActiveByUserIdAndFamilyId(userId, familyId, revokedAt);
+        outboxService.enqueue(userId, familyId, revokedAt, familyLifetime());
         try {
             publishFamilyTombstone(userId, familyId);
+            outboxService.markPublished(userId, familyId);
         } catch (RuntimeException ex) {
             throw stateUnavailable(ex);
         }
@@ -316,8 +326,10 @@ public class AuthSessionService {
             LocalDateTime revokedAt,
             RuntimeException extensionFailure) {
         sessionRepository.revokeActiveByUserIdAndFamilyId(userId, familyId, revokedAt);
+        outboxService.enqueue(userId, familyId, revokedAt, familyLifetime());
         try {
             publishFamilyTombstone(userId, familyId);
+            outboxService.markPublished(userId, familyId);
         } catch (RuntimeException tombstoneFailure) {
             extensionFailure.addSuppressed(tombstoneFailure);
         }
