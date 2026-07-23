@@ -5,7 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.security.access.AccessDeniedException;
-import press.mizhifei.dentist.appointment.client.AuthServiceClient;
+import press.mizhifei.dentist.appointment.client.UserProfileServiceClient;
 import press.mizhifei.dentist.appointment.client.ClinicServiceClient;
 import press.mizhifei.dentist.appointment.client.NotificationClient;
 import press.mizhifei.dentist.appointment.client.ServiceResponse;
@@ -48,7 +48,7 @@ class AppointmentServiceAuthorizationTest {
     private AppointmentRepository appointmentRepository;
     private DentistAvailabilityRepository availabilityRepository;
     private NotificationClient notificationClient;
-    private AuthServiceClient authServiceClient;
+    private UserProfileServiceClient userProfileServiceClient;
     private ClinicServiceClient clinicServiceClient;
     private AppointmentService service;
 
@@ -57,13 +57,13 @@ class AppointmentServiceAuthorizationTest {
         appointmentRepository = mock(AppointmentRepository.class);
         availabilityRepository = mock(DentistAvailabilityRepository.class);
         notificationClient = mock(NotificationClient.class);
-        authServiceClient = mock(AuthServiceClient.class);
+        userProfileServiceClient = mock(UserProfileServiceClient.class);
         clinicServiceClient = mock(ClinicServiceClient.class);
         service = new AppointmentService(
                 appointmentRepository,
                 availabilityRepository,
                 notificationClient,
-                authServiceClient,
+                userProfileServiceClient,
                 clinicServiceClient);
     }
 
@@ -83,7 +83,7 @@ class AppointmentServiceAuthorizationTest {
                 appointmentRepository,
                 availabilityRepository,
                 notificationClient,
-                authServiceClient,
+                userProfileServiceClient,
                 clinicServiceClient);
     }
 

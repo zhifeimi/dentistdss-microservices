@@ -6,8 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import press.mizhifei.dentist.clinic.client.AppointmentServiceClient;
-import press.mizhifei.dentist.clinic.client.AuthServiceClient;
 import press.mizhifei.dentist.clinic.client.PatientServiceClient;
+import press.mizhifei.dentist.clinic.client.UserProfileServiceClient;
 import press.mizhifei.dentist.clinic.model.Clinic;
 import press.mizhifei.dentist.clinic.repository.ClinicRepository;
 
@@ -33,7 +33,7 @@ class ClinicServiceAppointmentFailureTest {
                 clinicRepository,
                 appointmentServiceClient,
                 mock(PatientServiceClient.class),
-                mock(AuthServiceClient.class));
+                mock(UserProfileServiceClient.class));
         when(clinicRepository.findById(42L))
                 .thenReturn(Optional.of(new Clinic()));
     }

@@ -1,11 +1,14 @@
 package press.mizhifei.dentist.userprofile.controller;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import press.mizhifei.dentist.security.AuthenticatedUser;
 import press.mizhifei.dentist.userprofile.dto.ApiResponse;
 import press.mizhifei.dentist.userprofile.dto.UserResponse;
 import press.mizhifei.dentist.userprofile.dto.UserUpdateRequest;
@@ -30,14 +33,15 @@ public class UserController {
     private final UserService userService;
 
     @GetMapping("/list/all")
-    public ResponseEntity<ApiResponse<List<UserResponse>>> listAllUsers(HttpServletRequest request) {
-        // For now, simplified without JWT validation - you may want to add security later
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    public ResponseEntity<ApiResponse<List<UserResponse>>> listAllUsers() {
         List<UserResponse> users = userService.listAllUsers();
         return ResponseEntity.ok(ApiResponse.success(users));
     }
 
     @GetMapping("/{id}/email")
-    public String getUserEmail(@PathVariable Long id) {
+    public String getUserEmail(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        requireSelfOrSystemAdmin(id, jwt);
         return userService.getUserEmail(id);
     }
 
@@ -47,11 +51,15 @@ public class UserController {
     }
 
     @GetMapping("/{id}/details")
-    public ResponseEntity<ApiResponse<UserDetailsResponse>> getUserDetails(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<UserDetailsResponse>> getUserDetails(
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt) {
+        requireSelfOrSystemAdmin(id, jwt);
         return ResponseEntity.ok(userService.getUserDetails(id));
     }
 
     @GetMapping("/email/{email}/details")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'CLINIC_ADMIN', 'RECEPTIONIST')")
     public UserDetailsResponse getUserDetailsByEmail(@PathVariable String email) {
         User user = userService.getUserByEmail(email);
         return new UserDetailsResponse(
@@ -71,7 +79,9 @@ public class UserController {
     @PutMapping("/{userId}")
     public ResponseEntity<ApiResponse<UserResponse>> updateUserProfile(
             @PathVariable Long userId,
-            @Valid @RequestBody UserUpdateRequest updateRequest) {
+            @Valid @RequestBody UserUpdateRequest updateRequest,
+            @AuthenticationPrincipal Jwt jwt) {
+        requireSelfOrSystemAdmin(userId, jwt);
         ApiResponse<UserResponse> response = userService.updateUserProfile(userId, updateRequest);
         return ResponseEntity.ok(response);
     }
@@ -79,5 +89,25 @@ public class UserController {
     @GetMapping("/clinic/{clinicId}/dentists")
     public List<UserResponse> getClinicDentists(@PathVariable Long clinicId) {
         return userService.getClinicDentists(clinicId);
+    }
+
+    /**
+     * Users may read or update only their own record; the system admin is
+     * unrestricted.
+     */
+    private void requireSelfOrSystemAdmin(Long requestedUserId, Jwt jwt) {
+        AuthenticatedUser user = AuthenticatedUser.from(jwt);
+        if (user.hasRole("SYSTEM_ADMIN")) {
+            return;
+        }
+        long authenticatedUserId;
+        try {
+            authenticatedUserId = user.requiredNumericUserId();
+        } catch (IllegalStateException ex) {
+            throw new AccessDeniedException("Authenticated subject is invalid", ex);
+        }
+        if (!requestedUserId.equals(authenticatedUserId)) {
+            throw new AccessDeniedException("User records are limited to the current user");
+        }
     }
 }

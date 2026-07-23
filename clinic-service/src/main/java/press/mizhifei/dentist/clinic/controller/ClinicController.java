@@ -1,12 +1,13 @@
 package press.mizhifei.dentist.clinic.controller;
 
 import feign.FeignException;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -14,19 +15,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PathVariable;
-import press.mizhifei.dentist.clinic.client.AuthServiceClient;
 import press.mizhifei.dentist.clinic.dto.ApiResponse;
 import press.mizhifei.dentist.clinic.dto.ClinicResponse;
 import press.mizhifei.dentist.clinic.dto.ClinicSearchRequest;
 import press.mizhifei.dentist.clinic.dto.ClinicCreateRequest;
 import press.mizhifei.dentist.clinic.dto.ClinicUpdateRequest;
 import press.mizhifei.dentist.clinic.dto.PatientWithAppointmentResponse;
-import press.mizhifei.dentist.clinic.dto.UserDetailsResponse;
 import press.mizhifei.dentist.clinic.dto.UserResponse;
 import press.mizhifei.dentist.clinic.service.ClinicService;
-import press.mizhifei.dentist.clinic.util.UserContextUtil;
+import press.mizhifei.dentist.security.AuthenticatedUser;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  *
@@ -41,8 +41,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ClinicController {
 
+    private static final String ROLE_SYSTEM_ADMIN = "SYSTEM_ADMIN";
+    private static final String ROLE_CLINIC_ADMIN = "CLINIC_ADMIN";
+    private static final String ROLE_RECEPTIONIST = "RECEPTIONIST";
+
     private final ClinicService clinicService;
-    private final AuthServiceClient authServiceClient;
 
     @GetMapping("/list/all")
     public ResponseEntity<ApiResponse<List<ClinicResponse>>> listAllEnabledClinics() {
@@ -63,6 +66,7 @@ public class ClinicController {
     }
 
     @PostMapping("")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     public ResponseEntity<ApiResponse<ClinicResponse>> createClinic(@Valid @RequestBody ClinicCreateRequest request) {
         ClinicResponse response = clinicService.createClinic(request);
         return ResponseEntity.ok(ApiResponse.success(response));
@@ -74,27 +78,21 @@ public class ClinicController {
     public ResponseEntity<ApiResponse<ClinicResponse>> updateClinic(
             @PathVariable Long id,
             @Valid @RequestBody ClinicUpdateRequest request,
-            HttpServletRequest httpRequest) {
+            @AuthenticationPrincipal Jwt jwt) {
         try {
-            // Extract user context from headers (forwarded by API Gateway)
-            String userEmail = UserContextUtil.getUserEmail(httpRequest);
-            String userId = UserContextUtil.getUserId(httpRequest);
+            AuthenticatedUser user = AuthenticatedUser.from(jwt);
+            boolean systemAdmin = user.hasRole(ROLE_SYSTEM_ADMIN);
 
-            if (!StringUtils.hasText(userEmail)) {
-                return ResponseEntity.status(401)
-                        .body(ApiResponse.error("Authentication required"));
-            }
-
-            // Check if user has CLINIC_ADMIN role
-            if (!UserContextUtil.isClinicAdmin(httpRequest)) {
+            if (!systemAdmin && !user.hasRole(ROLE_CLINIC_ADMIN)) {
                 return ResponseEntity.status(403)
                         .body(ApiResponse.error("CLINIC_ADMIN role required"));
             }
 
-            log.debug("User {} requesting to update clinic {}", userEmail, id);
+            log.debug("User {} requesting to update clinic {}", user.email(), id);
 
-            // Validate clinic access for CLINIC_ADMIN users
-            if (!UserContextUtil.hasClinicAccess(httpRequest, id)) {
+            // A clinic admin may only update their own clinic; the system
+            // admin is unrestricted.
+            if (!systemAdmin && !Objects.equals(user.clinicId(), id)) {
                 return ResponseEntity.status(403)
                         .body(ApiResponse.error("Access denied. You can only update your own clinic."));
             }
@@ -114,31 +112,28 @@ public class ClinicController {
 
     /**
      * Get patients for a clinic sorted by upcoming appointments
-     * Requires CLINIC_ADMIN or RECEPTIONIST role
-     * Applies clinic-based filtering for CLINIC_ADMIN and RECEPTIONIST users
+     * Requires CLINIC_ADMIN or RECEPTIONIST role scoped to that clinic
+     * (SYSTEM_ADMIN is unrestricted)
      */
     @GetMapping("/{clinicId}/patients")
     public ResponseEntity<ApiResponse<List<PatientWithAppointmentResponse>>> getClinicPatients(
-            @PathVariable Long clinicId, HttpServletRequest request) {
+            @PathVariable Long clinicId,
+            @AuthenticationPrincipal Jwt jwt) {
         try {
-            // Extract user context from headers (forwarded by API Gateway)
-            String userEmail = UserContextUtil.getUserEmail(request);
+            AuthenticatedUser user = AuthenticatedUser.from(jwt);
 
-            if (!StringUtils.hasText(userEmail)) {
-                return ResponseEntity.status(401)
-                        .body(ApiResponse.error("Authentication required"));
-            }
-
-            log.debug("User {} requesting patients for clinic {}", userEmail, clinicId);
+            log.debug("User {} requesting patients for clinic {}", user.email(), clinicId);
 
             // Check if user has required roles
-            if (!UserContextUtil.isClinicStaff(request)) {
+            if (!user.hasRole(ROLE_SYSTEM_ADMIN)
+                    && !user.hasRole(ROLE_CLINIC_ADMIN)
+                    && !user.hasRole(ROLE_RECEPTIONIST)) {
                 return ResponseEntity.status(403)
                         .body(ApiResponse.error("CLINIC_ADMIN or RECEPTIONIST role required"));
             }
 
-            // Validate clinic access for CLINIC_ADMIN and RECEPTIONIST users
-            if (!UserContextUtil.hasClinicAccess(request, clinicId)) {
+            // Clinic staff may only view patients from their own clinic
+            if (!user.hasRole(ROLE_SYSTEM_ADMIN) && !Objects.equals(user.clinicId(), clinicId)) {
                 return ResponseEntity.status(403)
                         .body(ApiResponse.error("Access denied. You can only view patients from your own clinic."));
             }
@@ -174,7 +169,7 @@ public class ClinicController {
 
     /**
      * Get dentists for a clinic
-     * No role required - public endpoint
+     * Any authenticated user (needed by the booking flow)
      */
     @GetMapping("/{clinicId}/dentists")
     public ResponseEntity<ApiResponse<List<UserResponse>>> getClinicDentists(@PathVariable Long clinicId) {

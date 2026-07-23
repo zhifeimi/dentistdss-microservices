@@ -7,7 +7,7 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import press.mizhifei.dentist.appointment.client.AuthServiceClient;
+import press.mizhifei.dentist.appointment.client.UserProfileServiceClient;
 import press.mizhifei.dentist.appointment.client.ClinicServiceClient;
 import press.mizhifei.dentist.appointment.client.NotificationClient;
 import press.mizhifei.dentist.appointment.client.ServiceResponse;
@@ -51,7 +51,7 @@ public class AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final DentistAvailabilityRepository availabilityRepository;
     private final NotificationClient notificationClient;
-    private final AuthServiceClient authServiceClient;
+    private final UserProfileServiceClient userProfileServiceClient;
     private final ClinicServiceClient clinicServiceClient;
 
     @Transactional
@@ -766,13 +766,13 @@ public class AppointmentService {
             Appointment appointment,
             AppointmentResponse response) {
         try {
-            response.setPatientName(authServiceClient.getUserFullName(
+            response.setPatientName(userProfileServiceClient.getUserFullName(
                     appointment.getPatientId()));
         } catch (Exception exception) {
             response.setPatientName("Patient " + appointment.getPatientId());
         }
         try {
-            response.setDentistName(authServiceClient.getUserFullName(
+            response.setDentistName(userProfileServiceClient.getUserFullName(
                     appointment.getDentistId()));
         } catch (Exception exception) {
             response.setDentistName("Dr. Dentist " + appointment.getDentistId());
@@ -852,14 +852,14 @@ public class AppointmentService {
         try {
             templateVariables.put(
                     "patient_name",
-                    authServiceClient.getUserFullName(appointment.getPatientId()));
+                    userProfileServiceClient.getUserFullName(appointment.getPatientId()));
         } catch (Exception exception) {
             templateVariables.put("patient_name", "Patient");
         }
         try {
             templateVariables.put(
                     "dentist_name",
-                    authServiceClient.getUserFullName(appointment.getDentistId()));
+                    userProfileServiceClient.getUserFullName(appointment.getDentistId()));
         } catch (Exception exception) {
             templateVariables.put("dentist_name", "Dr. Dentist");
         }

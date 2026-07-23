@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.clinic.client.AppointmentServiceClient;
-import press.mizhifei.dentist.clinic.client.AuthServiceClient;
+import press.mizhifei.dentist.clinic.client.UserProfileServiceClient;
 import press.mizhifei.dentist.clinic.client.PatientServiceClient;
 import press.mizhifei.dentist.clinic.dto.ClinicResponse;
 import press.mizhifei.dentist.clinic.dto.ClinicSearchRequest;
@@ -42,7 +42,7 @@ public class ClinicService {
     private final ClinicRepository clinicRepository;
     private final AppointmentServiceClient appointmentServiceClient;
     private final PatientServiceClient patientServiceClient;
-    private final AuthServiceClient authServiceClient;
+    private final UserProfileServiceClient userProfileServiceClient;
 
     @Transactional(readOnly = true)
     public List<ClinicResponse> listAllEnabledClinics() {
@@ -208,7 +208,7 @@ public class ClinicService {
                 .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + clinicId));
 
         try {
-            List<UserResponse> dentists = authServiceClient.getClinicDentists(clinicId);
+            List<UserResponse> dentists = userProfileServiceClient.getClinicDentists(clinicId);
             log.debug("Found {} dentists for clinic {}", dentists.size(), clinicId);
             return dentists;
         } catch (Exception e) {
