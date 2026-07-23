@@ -24,6 +24,7 @@
         <module>config-server</module>
         <module>api-gateway</module>
         <module>security-common</module>
+        <module>db-migrations</module>
         <module>auth-service</module>
         <module>clinic-service</module>
         <module>appointment-service</module>

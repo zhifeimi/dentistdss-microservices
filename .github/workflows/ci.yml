@@ -19,6 +19,24 @@ jobs:
     name: Maven verify
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: dentistdss
+          POSTGRES_USER: dentistdss
+          POSTGRES_PASSWORD: dentistdss
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: jdbc:postgresql://localhost:5432/dentistdss
+      TEST_DATABASE_USERNAME: dentistdss
+      TEST_DATABASE_PASSWORD: dentistdss
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

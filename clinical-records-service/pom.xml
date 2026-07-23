@@ -43,6 +43,11 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
         </dependency>
+        <dependency>
+            <groupId>press.mizhifei.dentist</groupId>
+            <artifactId>db-migrations</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Cloud -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>

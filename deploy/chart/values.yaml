@@ -179,7 +179,6 @@ services:
       - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -192,7 +191,6 @@ services:
       - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: redis
       REDIS_PORT: "6379"

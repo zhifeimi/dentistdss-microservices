@@ -325,7 +325,6 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8089/actuator/health >/dev/null"]
       interval: 15s
@@ -355,7 +354,6 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8090/actuator/health >/dev/null"]
       interval: 15s
