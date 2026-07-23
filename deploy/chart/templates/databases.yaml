@@ -54,7 +54,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: dentistdss-runtime
+                  name: dentistdss-postgres
                   key: POSTGRES_PASSWORD
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
@@ -150,7 +150,7 @@ spec:
             - name: MONGO_INITDB_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: dentistdss-runtime
+                  name: dentistdss-mongo
                   key: MONGO_INITDB_ROOT_PASSWORD
           ports:
             - name: mongo

@@ -42,6 +42,9 @@ POSTGRES_PASSWORD
 MONGO_INITDB_ROOT_PASSWORD
 SPRING_CONFIG_USER
 SPRING_CONFIG_PASS
+REDIS_PASSWORD
+ANONYMOUS_SESSION_FINGERPRINT_KEY
+EMAIL_VERIFICATION_CODE_PEPPER
 JWT_RSA_PRIVATE_KEY
 JWT_RSA_PUBLIC_KEY
 JWT_RSA_KEY_ID
@@ -54,6 +57,13 @@ MAIL_PASSWORD
 SPRING_DATA_MONGODB_URI
 MONGODB_URI
 ```
+
+The chart never mounts the runtime record wholesale. `externalSecrets.records`
+in `values.yaml` maps each Kubernetes Secret name to the record properties it
+may contain, and one ExternalSecret is rendered per entry. Each service then
+lists exactly the Secrets it needs under `services.<name>.secrets`, so a
+compromised pod only reads the credentials for its own databases and keys.
+Keep the record schema above and the `records` map in sync when adding keys.
 
 Each `genai-service-auth` record requires a dedicated gateway-to-GenAI key pair:
 
@@ -74,8 +84,34 @@ Seed each runtime record interactively without printing credentials:
 ./deploy/scripts/seed-vault-runtime.sh prod
 ```
 
-The helper generates independent database, Config Server, and 3072-bit RSA JWT
-values. It prompts locally for the Vault token, Google OAuth, and SMTP values.
+The helper generates independent database, Config Server, Redis, fingerprint,
+verification-code pepper, and 3072-bit RSA JWT values. It prompts locally for
+the Vault token, Google OAuth, and SMTP values.
+
+## Workloads and network policy
+
+The chart renders `postgres`, `mongo`, and `redis` StatefulSets alongside the
+service Deployments. Redis is authenticated: it starts with
+`--requirepass "$REDIS_PASSWORD"` from the `dentistdss-redis` Secret, and every
+consumer in `values.yaml` receives `REDIS_HOST`/`REDIS_PORT` plus the password.
+Production service configuration requires the Redis password with no default,
+so a missing Secret fails startup instead of silently opening an
+unauthenticated connection.
+
+NetworkPolicies default-deny the namespace and then allow only:
+
+- intra-namespace traffic to application pods (databases excluded);
+- PostgreSQL ingress from the seven JDBC services on 5432;
+- MongoDB ingress from `clinical-records-service`, `audit-service`, and
+  `genai-service` on 27017;
+- Redis ingress from its seven consumers on 6379;
+- gateway-to-GenAI and external LoadBalancer ingress to `api-gateway`;
+- DNS egress to `kube-system` and selected external egress for pods labeled
+  `dentistdss.io/external-egress: "true"` (CGNAT and link-local ranges stay
+  blocked).
+
+When a service gains or loses a database dependency, update both its
+`secrets` list and the matching `allow-*-clients` policy.
 
 The release workflow makes the repository-linked GHCR images public before it
 updates either GitOps branch, so no long-lived registry credential is stored in

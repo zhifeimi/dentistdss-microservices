@@ -19,6 +19,23 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      # Required in production: fail closed instead of connecting
+      # unauthenticated when the deployment forgets the password.
+      password: ${REDIS_PASSWORD}
+      timeout: 2s
+
+jwt:
+  issuer: ${JWT_ISSUER:https://api.mizhifei.press}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
 
 eureka:
   client:

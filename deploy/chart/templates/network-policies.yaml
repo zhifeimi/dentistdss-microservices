@@ -15,7 +15,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: NotIn
-        values: ["genai-service"]
+        values: ["genai-service", "postgres", "mongo", "redis"]
   policyTypes: ["Ingress"]
   ingress:
     - from:
@@ -92,6 +92,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: api-gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes: ["Ingress"]
   ingress:
     - ports:
@@ -113,5 +114,89 @@ spec:
             cidr: 0.0.0.0/0
             except:
               - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 169.254.0.0/16
               - 172.16.0.0/12
               - 192.168.0.0/16
+---
+# Databases are excluded from the namespace-internal ingress policy above;
+# only the services that actually persist data may reach them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-clients
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - auth-service
+                  - clinic-service
+                  - user-profile-service
+                  - system-service
+                  - notification-service
+                  - appointment-service
+                  - clinical-records-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mongo-clients
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mongo
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - clinical-records-service
+                  - audit-service
+                  - genai-service
+      ports:
+        - protocol: TCP
+          port: 27017
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis-clients
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - api-gateway
+                  - auth-service
+                  - clinic-service
+                  - user-profile-service
+                  - appointment-service
+                  - clinical-records-service
+                  - genai-service
+      ports:
+        - protocol: TCP
+          port: 6379

@@ -72,6 +72,28 @@ services:
       - no-new-privileges:true
     stop_grace_period: 60s
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    # $$ keeps the password out of the interpolated Compose command line;
+    # the shell inside the container expands it from its own environment.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$${REDIS_PASSWORD}\" --appendonly yes --dir /data"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
   config-server:
     <<: *spring-service
     image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-config-server:${BACKEND_IMAGE_TAG:-latest}
@@ -116,11 +138,17 @@ services:
     depends_on:
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SERVER_PORT: "8080"
       SERVER_SSL_ENABLED: "false"
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      ANONYMOUS_SESSION_FINGERPRINT_KEY: ${ANONYMOUS_SESSION_FINGERPRINT_KEY:?ANONYMOUS_SESSION_FINGERPRINT_KEY is required}
       GENAI_SERVICE_AUTH_PRIVATE_KEY: ${GENAI_SERVICE_AUTH_PRIVATE_KEY:-}
       GENAI_SERVICE_AUTH_PUBLIC_KEY: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:-}
       GENAI_SERVICE_AUTH_KEY_ID: ${GENAI_SERVICE_AUTH_KEY_ID:-}
@@ -141,6 +169,8 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - backend
       - egress
@@ -153,6 +183,10 @@ services:
       JWT_RSA_KEY_ID: ${JWT_RSA_KEY_ID:-dentistdss-homelab-1}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
+      EMAIL_VERIFICATION_CODE_PEPPER: ${EMAIL_VERIFICATION_CODE_PEPPER:?EMAIL_VERIFICATION_CODE_PEPPER is required}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       MAIL_HOST: ${MAIL_HOST:?MAIL_HOST is required}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
@@ -176,10 +210,16 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8083/actuator/health >/dev/null"]
       interval: 15s
@@ -197,11 +237,16 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8085/actuator/health >/dev/null"]
       interval: 15s
@@ -270,6 +315,8 @@ services:
         condition: service_healthy
       user-profile-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
@@ -277,7 +324,7 @@ services:
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8089/actuator/health >/dev/null"]
@@ -296,6 +343,8 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
@@ -305,7 +354,7 @@ services:
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8090/actuator/health >/dev/null"]
@@ -358,12 +407,17 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - backend
       - egress
     environment:
       <<: *spring-environment
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       VERTEX_AI_ENABLED: "true"
       VERTEX_AI_PROJECT_ID: ${VERTEX_AI_PROJECT_ID:-}
       VERTEX_AI_LOCATION: ${VERTEX_AI_LOCATION:-australia-southeast1}
@@ -383,6 +437,7 @@ services:
 volumes:
   postgres_data:
   mongo_data:
+  redis_data:
 
 networks:
   backend:

@@ -77,30 +77,34 @@ spec:
         - name: {{ $name }}
           image: "{{ $.Values.global.imageRegistry }}/dentistdss-{{ $name }}:{{ $.Values.global.imageTag }}"
           imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          {{- if $service.secrets }}
           envFrom:
+            {{- range $service.secrets }}
             - secretRef:
-                name: dentistdss-runtime
+                name: {{ . }}
+            {{- end }}
+          {{- end }}
           env:
             - name: SPRING_CLOUD_CONFIG_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: dentistdss-runtime
+                  name: dentistdss-config-client
                   key: SPRING_CONFIG_USER
             - name: SPRING_CLOUD_CONFIG_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: dentistdss-runtime
+                  name: dentistdss-config-client
                   key: SPRING_CONFIG_PASS
             {{- if $service.configServer }}
             - name: SPRING_SECURITY_USER_NAME
               valueFrom:
                 secretKeyRef:
-                  name: dentistdss-runtime
+                  name: dentistdss-config-client
                   key: SPRING_CONFIG_USER
             - name: SPRING_SECURITY_USER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: dentistdss-runtime
+                  name: dentistdss-config-client
                   key: SPRING_CONFIG_PASS
             {{- end }}
             {{- if eq $name "api-gateway" }}

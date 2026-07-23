@@ -29,24 +29,32 @@ spec:
         tokenSecretRef:
           name: {{ .Values.externalSecrets.tokenSecretName }}
           key: token
+{{- $storeName := .Values.externalSecrets.storeName }}
+{{- $runtimePath := .Values.externalSecrets.runtimePath }}
+{{- range $secretName, $keys := .Values.externalSecrets.records }}
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: dentistdss-runtime
+  name: {{ $secretName }}
   labels:
-    {{- include "dentistdss.labels" . | nindent 4 }}
+    {{- include "dentistdss.labels" $ | nindent 4 }}
 spec:
   refreshInterval: 1h
   secretStoreRef:
     kind: SecretStore
-    name: {{ .Values.externalSecrets.storeName }}
+    name: {{ $storeName }}
   target:
-    name: dentistdss-runtime
+    name: {{ $secretName }}
     creationPolicy: Owner
-  dataFrom:
-    - extract:
-        key: {{ .Values.externalSecrets.runtimePath | quote }}
+  data:
+    {{- range $keys }}
+    - secretKey: {{ . }}
+      remoteRef:
+        key: {{ $runtimePath | quote }}
+        property: {{ . }}
+    {{- end }}
+{{- end }}
 {{ if index .Values.services "genai-service" "enabled" }}
 ---
 apiVersion: external-secrets.io/v1
@@ -58,8 +66,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    kind: ClusterSecretStore
-    name: homelab-vault
+    kind: {{ .Values.externalSecrets.genaiStoreKind | default "ClusterSecretStore" }}
+    name: {{ .Values.externalSecrets.genaiStoreName | default "homelab-vault" }}
   target:
     name: dentistdss-genai-service-auth
     creationPolicy: Owner

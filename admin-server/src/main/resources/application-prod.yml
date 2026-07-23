@@ -20,7 +20,10 @@ management:
   endpoints:
     web:
       exposure:
-        include: '*'
+        include: health,info  # Minimal exposure for production
+  endpoint:
+    health:
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues

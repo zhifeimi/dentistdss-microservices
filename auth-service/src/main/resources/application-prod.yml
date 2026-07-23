@@ -43,9 +43,10 @@ jwt:
   issuer: ${JWT_ISSUER:https://api.mizhifei.press}
   audience: ${JWT_AUDIENCE:dentistdss-api}
   rsa:
-    private-key: ${JWT_RSA_PRIVATE_KEY:}
-    public-key: ${JWT_RSA_PUBLIC_KEY:}
-    key-id: ${JWT_RSA_KEY_ID:dentistdss}
+    # No defaults: signing keys must come from the deployment secret store.
+    private-key: ${JWT_RSA_PRIVATE_KEY}
+    public-key: ${JWT_RSA_PUBLIC_KEY}
+    key-id: ${JWT_RSA_KEY_ID}
 
 # Management/Actuator Configuration
 management:
