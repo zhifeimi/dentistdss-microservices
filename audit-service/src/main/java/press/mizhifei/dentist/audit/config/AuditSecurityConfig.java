@@ -50,6 +50,8 @@ public class AuditSecurityConfig {
                             .permitAll();
                     authorize.pathMatchers(HttpMethod.POST, "/audit")
                             .authenticated();
+                    authorize.pathMatchers(HttpMethod.GET, "/audit/integrity")
+                            .hasRole("SYSTEM_ADMIN");
                     authorize.pathMatchers(HttpMethod.GET, "/audit")
                             .hasRole("SYSTEM_ADMIN");
                     if (springdocEnabled) {

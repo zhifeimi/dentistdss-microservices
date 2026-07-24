@@ -24,10 +24,13 @@ import java.util.stream.Collectors;
 public class AuditService {
 
     private final AuditEntryRepository repository;
+    private final AuditContentHasher contentHasher;
 
     /**
      * Records an audit entry. {@code actor} is the verified service credential
      * subject supplied by the controller — never a value from the request body.
+     * The entry's tamper-evident {@code contentHash} is computed over the
+     * fully built document immediately before the save (AUDIT-01).
      */
     @Transactional
     public AuditEntryResponse record(AuditEntryRequest request, String actor) {
@@ -40,6 +43,7 @@ public class AuditService {
                 .timestamp(LocalDateTime.now())
                 .context(request.getContext())
                 .build();
+        entry.setContentHash(contentHasher.hash(entry));
         AuditEntry saved = repository.save(entry);
         return toDto(saved);
     }

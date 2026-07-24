@@ -47,8 +47,8 @@ eureka:
   instance:
     preferIpAddress: false
 
-# Feign client tuning: audit emission is best-effort and must never stall
-# request threads waiting on the audit service.
+# Feign client tuning: audit relay round-trips are relay-bounded and must
+# never stall the scheduled relay thread waiting on the audit service.
 feign:
   client:
     config:
@@ -118,6 +118,16 @@ app:
       sweep-delay-ms: ${SECURITY_OUTBOX_SWEEP_DELAY_MS:300000}
       sweep-initial-delay-ms: ${SECURITY_OUTBOX_SWEEP_INITIAL_DELAY_MS:60000}
       sweep-batch-size: ${SECURITY_OUTBOX_SWEEP_BATCH_SIZE:500}
+    # Durable audit event outbox (AUDIT-01). Events are written in the
+    # caller's transaction and delivered to audit-service by the scheduled
+    # relay; failed deliveries are retried with backoff and never discarded.
+    audit-outbox:
+      enabled: ${SECURITY_AUDIT_OUTBOX_ENABLED:true}
+      relay-delay-ms: ${SECURITY_AUDIT_OUTBOX_RELAY_DELAY_MS:5000}
+      relay-initial-delay-ms: ${SECURITY_AUDIT_OUTBOX_RELAY_INITIAL_DELAY_MS:10000}
+      retry-backoff-ms: ${SECURITY_AUDIT_OUTBOX_RETRY_BACKOFF_MS:30000}
+      relay-batch-size: ${SECURITY_AUDIT_OUTBOX_RELAY_BATCH_SIZE:100}
+      stale-warn-threshold: ${SECURITY_AUDIT_OUTBOX_STALE_WARN_THRESHOLD:20}
     cookies:
       secure: false
       same-site: Lax

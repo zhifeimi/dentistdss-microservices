@@ -23,6 +23,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import press.mizhifei.dentist.audit.config.AuditSecurityConfig;
+import press.mizhifei.dentist.audit.service.AuditIntegrityService;
 import press.mizhifei.dentist.audit.service.AuditService;
 import press.mizhifei.dentist.security.ReactiveJwtSecurityAutoConfiguration;
 
@@ -61,6 +62,9 @@ class AuditControllerServiceAuthUnavailableTest {
 
     @MockitoBean
     private AuditService auditService;
+
+    @MockitoBean
+    private AuditIntegrityService auditIntegrityService;
 
     @MockitoBean
     private ReactiveStringRedisTemplate redisTemplate;

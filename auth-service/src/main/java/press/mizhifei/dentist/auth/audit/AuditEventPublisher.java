@@ -1,56 +1,49 @@
 package press.mizhifei.dentist.auth.audit;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import press.mizhifei.dentist.auth.client.AuditClient;
-import press.mizhifei.dentist.auth.dto.AuditEntryRequest;
 
 import java.util.Map;
-import java.util.concurrent.Executor;
 
 /**
- * Best-effort audit event publisher. Security-relevant events in this
- * service (login, logout, session-family revocation on token reuse,
- * registration, approval decisions) are dispatched to audit-service
- * through a Feign client carrying an audience-scoped service credential.
+ * Durable audit event publisher. Security-relevant events in this service
+ * (login, logout, session-family revocation on token reuse, registration,
+ * approval decisions) are written to a transactional outbox
+ * ({@link AuditOutboxService}) in the caller's transaction and delivered to
+ * audit-service by a scheduled relay carrying an audience-scoped service
+ * credential.
  *
- * <p>Delivery is lossy by design: dispatch runs on a bounded executor with
- * a discard policy, and every failure (audit-service unavailable, Feign
- * error, executor rejection) is logged and swallowed — audit emission must
- * never break or delay an authentication flow. The entry's actor is
- * attributed server-side by audit-service from the verified credential
- * subject ({@code auth-service}); callers of {@link #publish} can only
- * assert contextual user/clinic ids, never an actor.</p>
+ * <p>Delivery is at-least-once and transaction-coupled: an event is
+ * recorded if and only if the mutation it documents committed, and it is
+ * retried with backoff until audit-service confirms ingestion — never
+ * discarded. The entry's actor is still attributed server-side by
+ * audit-service from the verified credential subject
+ * ({@code auth-service}); callers of {@link #publish} can only assert
+ * contextual user/clinic ids, never an actor.</p>
  *
- * <p>Caveat: emission is fire-and-forget and not transactionally coupled
- * to the operation it records, so an operation that rolls back after
- * emission may leave a stale event, and an operation that succeeds may
- * lose its event under audit-service outage. The audit trail is a
- * best-effort signal, not the system of record.</p>
+ * <p>Caveats, by contract decision: a crash between the confirmed delivery
+ * and the outbox delete re-delivers the event, so duplicate documents can
+ * appear in audit-service (there are no idempotency keys); and because the
+ * outbox write shares the caller's transaction, a database failure here now
+ * propagates to the caller rather than being swallowed. That coupling is
+ * intentional — at the in-transaction call sites the business operation
+ * would fail on the same database anyway, and losing the event silently
+ * with the mutation would be worse than failing both together.</p>
  */
-@Slf4j
 @Component
+@RequiredArgsConstructor
 public class AuditEventPublisher {
 
-    private final AuditClient auditClient;
-    private final Executor executor;
-
-    public AuditEventPublisher(
-            AuditClient auditClient,
-            @Qualifier("auditEventExecutor") Executor executor) {
-        this.auditClient = auditClient;
-        this.executor = executor;
-    }
+    private final AuditOutboxService auditOutboxService;
 
     /**
-     * Queues an audit event for asynchronous delivery. Never throws.
+     * Records an audit event for durable, relay-delivered emission.
      *
-     * @param action            event action, e.g. {@code LOGIN_SUCCESS}
-     * @param target            event target, e.g. {@code user:42}
-     * @param assertedUserId    caller-claimed user the event concerns (nullable)
-     * @param assertedClinicId  caller-claimed clinic the event concerns (nullable)
-     * @param context           additional event context (nullable)
+     * @param action           event action, e.g. {@code LOGIN_SUCCESS}
+     * @param target           event target, e.g. {@code user:42}
+     * @param assertedUserId   caller-claimed user the event concerns (nullable)
+     * @param assertedClinicId caller-claimed clinic the event concerns (nullable)
+     * @param context          additional event context (nullable)
      */
     public void publish(
             String action,
@@ -58,27 +51,6 @@ public class AuditEventPublisher {
             Long assertedUserId,
             Long assertedClinicId,
             Map<String, Object> context) {
-        AuditEntryRequest request = AuditEntryRequest.builder()
-                .action(action)
-                .target(target)
-                .assertedUserId(assertedUserId)
-                .assertedClinicId(assertedClinicId)
-                .context(context)
-                .build();
-        try {
-            executor.execute(() -> send(request));
-        } catch (RuntimeException ex) {
-            log.warn("Audit event '{}' for {} was dropped before dispatch: {}",
-                    action, target, ex.getMessage());
-        }
-    }
-
-    private void send(AuditEntryRequest request) {
-        try {
-            auditClient.record(request);
-        } catch (RuntimeException ex) {
-            log.warn("Audit event '{}' for {} was not delivered: {}",
-                    request.getAction(), request.getTarget(), ex.getMessage());
-        }
+        auditOutboxService.publish(action, target, assertedUserId, assertedClinicId, context);
     }
 }

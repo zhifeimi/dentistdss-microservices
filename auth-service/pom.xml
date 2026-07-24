@@ -50,6 +50,12 @@
             <artifactId>security-common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- jsonb mapping for the audit outbox context column (same
+             precedent as notification-service's metadata column) -->
+        <dependency>
+            <groupId>io.hypersistence</groupId>
+            <artifactId>hypersistence-utils-hibernate-71</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>

@@ -35,4 +35,12 @@ public class AuditEntry {
     private LocalDateTime timestamp;
 
     private Map<String, Object> context; // additional metadata
+
+    /**
+     * SHA-256 over this document's canonical form, assigned at ingest
+     * (AUDIT-01). Recomputable from the stored fields alone, so verifiers
+     * can detect field-level edits. Entries written before this feature
+     * simply lack the field and are never sealed.
+     */
+    private String contentHash;
 } 

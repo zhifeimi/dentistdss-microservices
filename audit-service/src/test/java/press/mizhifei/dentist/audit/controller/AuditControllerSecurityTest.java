@@ -28,6 +28,8 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import press.mizhifei.dentist.audit.config.AuditSecurityConfig;
 import press.mizhifei.dentist.audit.dto.AuditEntryRequest;
 import press.mizhifei.dentist.audit.dto.AuditEntryResponse;
+import press.mizhifei.dentist.audit.dto.IntegrityReport;
+import press.mizhifei.dentist.audit.service.AuditIntegrityService;
 import press.mizhifei.dentist.audit.service.AuditService;
 import press.mizhifei.dentist.security.ReactiveJwtSecurityAutoConfiguration;
 
@@ -77,6 +79,9 @@ class AuditControllerSecurityTest {
 
     @MockitoBean
     private AuditService auditService;
+
+    @MockitoBean
+    private AuditIntegrityService auditIntegrityService;
 
     @MockitoBean
     private ReactiveStringRedisTemplate redisTemplate;
@@ -147,6 +152,53 @@ class AuditControllerSecurityTest {
                 .expectStatus().isOk();
 
         verify(auditService).listAll();
+    }
+
+    // ---- integrity verification (GET /audit/integrity) is SYSTEM_ADMIN only ----
+
+    @Test
+    void allowsSystemAdminToVerifyAuditIntegrity() {
+        when(auditIntegrityService.verify()).thenReturn(IntegrityReport.builder()
+                .verified(true)
+                .sealsChecked(2)
+                .documentsChecked(4)
+                .build());
+
+        webTestClient.mutateWith(mockJwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_SYSTEM_ADMIN")))
+                .get()
+                .uri("/audit/integrity")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.success").isEqualTo(true)
+                .jsonPath("$.dataObject.verified").isEqualTo(true)
+                .jsonPath("$.dataObject.sealsChecked").isEqualTo(2)
+                .jsonPath("$.dataObject.documentsChecked").isEqualTo(4);
+
+        verify(auditIntegrityService).verify();
+    }
+
+    @Test
+    void rejectsNonAdminIntegrityVerification() {
+        webTestClient.mutateWith(mockJwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_PATIENT")))
+                .get()
+                .uri("/audit/integrity")
+                .exchange()
+                .expectStatus().isForbidden();
+
+        verifyNoInteractions(auditIntegrityService);
+    }
+
+    @Test
+    void rejectsAnonymousIntegrityVerification() {
+        webTestClient.get()
+                .uri("/audit/integrity")
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        verifyNoInteractions(auditIntegrityService);
     }
 
     // ---- ingestion (POST /audit) is service-credential only ----

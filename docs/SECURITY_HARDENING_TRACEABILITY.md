@@ -17,7 +17,7 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 | DATA-01 | Shared DB schema mutates through Hibernate | Versioned Flyway owner and `ddl-auto: validate` everywhere | Migration succeeds against baseline; all services validate | Partial (see notes) |
 | DATA-02 | Applications use shared/root database credentials | Per-service PostgreSQL and MongoDB users/grants | Unauthorized cross-database/table access fails | In progress |
 | DATA-03 | Dental image writes and validation are unsafe | Signature/decode limits, canonical re-encode, authorized ownership, cleanup/compensation | False MIME, polyglot, oversized pixels, and unauthorized access fail | In progress |
-| AUDIT-01 | Audit actor is caller-controlled and critical actions are not integrated | Server-attributed internal ingest, transactional outbox, append-only/tamper-evident store | Caller cannot forge actor; critical mutations emit immutable events | Partial (see notes) |
+| AUDIT-01 | Audit actor is caller-controlled and critical actions are not integrated | Server-attributed internal ingest, transactional outbox, append-only/tamper-evident store | Caller cannot forge actor; critical mutations emit immutable events | Done (see notes) |
 | RATE-01 | Session and GenAI limiter maps are bypassable/unbounded | Redis-backed signed sessions, quotas, TTLs, and cardinality limits | Rotation, restart, and multi-replica tests pass without key leaks | In progress |
 | ERROR-01 | Exception details leak to clients/logs | Shared safe error envelope and redaction | Responses contain no stack/SQL/SMTP/provider/token/PHI detail | In progress |
 | CORS-01 | CORS and cookie behavior are broader than required | Exact origins/methods/headers, Origin validation, anti-CSRF for cookie endpoints | Hostile Origin and missing/invalid CSRF requests fail | In progress |
@@ -25,10 +25,10 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 
 ## Finding notes
 
-### AUDIT-01 — partial: credentials and server attribution shipped
+### AUDIT-01 — done: server attribution, durable outbox, tamper-evident seals
 
 Credential-based, server-attributed audit ingest landed on
-`agent/security-platform-hardening` (PR #22; CI confirmation pending):
+`agent/security-platform-hardening` (PR #22, CI green at `42e6eb2`):
 
 - Ingest authentication: audit-service `POST /audit/events` requires a
   locally verified, audience-scoped service credential
@@ -50,13 +50,34 @@ Credential-based, server-attributed audit ingest landed on
   verifiers do not persist it. The 30-second expiry, single audience, and
   kid→scope binding are the controls; a replay store was judged
   disproportionate for an internal, network-policy-restricted endpoint.
-- Caveat — best-effort emitter: auth-service audit emission is
-  fire-and-forget with failures logged and discarded, so events can be
-  lost during audit-service outages. The pending transactional outbox
-  closes this durability gap.
-
-Remaining: transactional outbox for emission durability, and
-append-only/tamper-evident audit storage.
+- Durable emission: auth-service audit events are now written to the
+  `auth_audit_outbox` table (Flyway `V2__audit_outbox.sql`) inside the same
+  database transaction as the security-critical mutation — an event exists
+  if and only if the mutation committed. A scheduled relay claims pending
+  rows with `FOR UPDATE SKIP LOCKED`, delivers them to audit-service, and
+  deletes rows only after a confirmed delivery; failures record the attempt
+  and retry with backoff forever — rows are never expired or purged.
+  Delivery is at-least-once: a crash between a confirmed delivery and the
+  delete re-delivers the event, and audit-service stores the duplicate as a
+  distinct document (no idempotency keys, by contract decision). Because
+  the write joins the caller's transaction, an outbox write failure fails
+  the business operation too — intentional coupling, since at the
+  in-transaction sites the business operation would fail on the same
+  database anyway. Backlog and staleness are observable via the relay's
+  `stale-warn-threshold` warning and
+  `select count(*), max(attempts) from auth_audit_outbox`.
+- Tamper-evident storage: audit-service computes a canonical SHA-256
+  content hash for every document at ingest, and a single scheduled sealer
+  (one replica) groups content-hashed documents into strictly sequential,
+  chained batch seals (`audit_seals`, unique sequence index) over
+  contiguous `_id` ranges. `GET /audit/integrity` (SYSTEM_ADMIN) re-verifies
+  the chain by recomputation and reports the first inconsistency — sequence
+  and range continuity, chain linkage, seal self-hash, sealed-range
+  document count and boundaries, per-document content hashes, and the batch
+  root. This is detection, not prevention: a fully consistent rewrite of
+  sealed history would require controlling the sealer. Documents written
+  before this feature carry no content hash and are never sealed; they
+  surface as the report's `unsealedDocuments` backlog count.
 
 ### DATA-01 — partial: Flyway baseline and validate shipped
 
