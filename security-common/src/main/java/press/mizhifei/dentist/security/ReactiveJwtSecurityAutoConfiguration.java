@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 
 import java.time.Duration;
 
@@ -66,7 +67,12 @@ public class ReactiveJwtSecurityAutoConfiguration {
             ServerHttpSecurity http,
             ReactiveJwtResourceServerCustomizer resourceServerCustomizer,
             @Value("${springdoc.api-docs.enabled:false}") boolean springdocEnabled) {
-        http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+        // Stateless bearer-token fallback chain: credentials are attached
+        // explicitly, never auto-attached by a browser, so no request requires
+        // CSRF protection (CodeQL java/spring-disabled-csrf: match nothing
+        // rather than disabling the filter).
+        http.csrf(csrf -> csrf.requireCsrfProtectionMatcher(
+                        exchange -> ServerWebExchangeMatcher.MatchResult.notMatch()))
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(authorize -> {
                     authorize.pathMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll();

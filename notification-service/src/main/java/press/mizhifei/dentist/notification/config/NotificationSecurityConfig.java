@@ -10,6 +10,7 @@ import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.authentication.AuthenticationWebFilter;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers;
 import press.mizhifei.dentist.security.ReactiveBearerTokenFailureHandler;
 import press.mizhifei.dentist.security.ReactiveJwtResourceServerCustomizer;
@@ -39,7 +40,13 @@ public class NotificationSecurityConfig {
             ReactiveBearerTokenFailureHandler failureHandler,
             @Value("${springdoc.api-docs.enabled:false}")
             boolean springdocEnabled) {
-        http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+        // Stateless chain: machine surfaces take verified service credentials
+        // and user surfaces take bearer user JWTs — credentials are attached
+        // explicitly, never auto-attached by a browser, so no request requires
+        // CSRF protection (CodeQL java/spring-disabled-csrf: match nothing
+        // rather than disabling the filter).
+        http.csrf(csrf -> csrf.requireCsrfProtectionMatcher(
+                        exchange -> ServerWebExchangeMatcher.MatchResult.notMatch()))
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(authorize -> {
                     authorize.pathMatchers(

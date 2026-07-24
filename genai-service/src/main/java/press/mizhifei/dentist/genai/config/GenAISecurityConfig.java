@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtRea
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.authentication.AuthenticationWebFilter;
 import org.springframework.security.web.server.authentication.WebFilterChainServerAuthenticationSuccessHandler;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 import org.springframework.util.StringUtils;
 import press.mizhifei.dentist.genai.security.GenAIServiceJwtDecoder;
 import press.mizhifei.dentist.security.ReactiveBearerTokenFailureHandler;
@@ -34,7 +35,13 @@ public class GenAISecurityConfig {
             GenAIServiceJwtDecoder serviceJwtDecoder,
             ReactiveBearerTokenFailureHandler failureHandler,
             @Value("${springdoc.api-docs.enabled:false}") boolean springdocEnabled) {
-        http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+        // Stateless chain: chatbot endpoints take bearer user JWTs (or the
+        // verified gateway service credential for anonymous help) — credentials
+        // are attached explicitly, never auto-attached by a browser, so no
+        // request requires CSRF protection (CodeQL java/spring-disabled-csrf:
+        // match nothing rather than disabling the filter).
+        http.csrf(csrf -> csrf.requireCsrfProtectionMatcher(
+                        exchange -> ServerWebExchangeMatcher.MatchResult.notMatch()))
                 .cors(Customizer.withDefaults())
                 .authorizeExchange(authorize -> {
                     authorize.pathMatchers(HttpMethod.GET,

@@ -62,7 +62,11 @@ public class ServletJwtSecurityAutoConfiguration {
             HttpSecurity http,
             ServletJwtResourceServerCustomizer resourceServerCustomizer,
             @Value("${springdoc.api-docs.enabled:false}") boolean springdocEnabled) throws Exception {
-        http.csrf(csrf -> csrf.disable())
+        // Stateless bearer-token fallback chain: credentials are attached
+        // explicitly, never auto-attached by a browser, so no request requires
+        // CSRF protection (CodeQL java/spring-disabled-csrf: match nothing
+        // rather than disabling the filter).
+        http.csrf(csrf -> csrf.requireCsrfProtectionMatcher(request -> false))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> {
