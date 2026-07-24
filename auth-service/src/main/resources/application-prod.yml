@@ -87,3 +87,10 @@ app:
     cookies:
       secure: true
       same-site: None
+    # Outbound service credentials (sub auth-service) for audit-service and
+    # notification-service calls. Empty defaults keep the Feign interceptors
+    # dormant until keys are provisioned.
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: auth-service

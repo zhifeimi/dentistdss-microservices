@@ -8,6 +8,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.client.NotificationServiceClient;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.ApprovalRequestResponse;
@@ -20,6 +21,7 @@ import press.mizhifei.dentist.auth.model.User;
 import press.mizhifei.dentist.auth.repository.ClinicRepository;
 import press.mizhifei.dentist.auth.repository.UserRepository;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -29,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,6 +44,7 @@ class AuthServiceRegistrationTest {
     private ClinicRepository clinicRepository;
     private NotificationServiceClient notificationServiceClient;
     private UserApprovalService userApprovalService;
+    private AuditEventPublisher auditEventPublisher;
     private AuthService authService;
 
     @BeforeEach
@@ -50,13 +54,15 @@ class AuthServiceRegistrationTest {
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         notificationServiceClient = mock(NotificationServiceClient.class);
         userApprovalService = mock(UserApprovalService.class);
+        auditEventPublisher = mock(AuditEventPublisher.class);
         authService = new AuthService(
                 userRepository,
                 clinicRepository,
                 passwordEncoder,
                 notificationServiceClient,
                 userApprovalService,
-                mock(AuthSessionService.class));
+                mock(AuthSessionService.class),
+                auditEventPublisher);
         ReflectionTestUtils.setField(authService, "codeExpiryMinutes", 10L);
         ReflectionTestUtils.setField(authService, "verificationCodePepper", "test-pepper");
         when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");
@@ -82,6 +88,32 @@ class AuthServiceRegistrationTest {
         assertEquals(1, userCaptor.getValue().getRoles().size());
         assertTrue(userCaptor.getValue().getRoles().contains(Role.PATIENT));
         assertFalse(userCaptor.getValue().getRoles().contains(Role.SYSTEM_ADMIN));
+    }
+
+    @Test
+    void publicSignupEmitsAuditEventForTheCreatedPatient() {
+        when(userRepository.findByEmail("patient@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            user.setId(77L);
+            return user;
+        });
+
+        authService.registerUser(new SignUpRequest(
+                "Pat",
+                "Ient",
+                "patient@example.com",
+                "secure-password",
+                "SYSTEM_ADMIN"));
+
+        verify(auditEventPublisher).publish(
+                eq("USER_REGISTERED"),
+                eq("user:77"),
+                eq(77L),
+                eq(null),
+                eq(Map.of(
+                        "role", "PATIENT",
+                        "provider", "LOCAL")));
     }
 
     @Test

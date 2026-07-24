@@ -42,6 +42,19 @@ jwt:
   audience: ${JWT_AUDIENCE:dentistdss-api}
 
 # =============================================================================
+# Service-to-Service Authentication (Issuer)
+# =============================================================================
+# appointment-service signs short-lived audience-scoped credentials for its
+# notification-service calls. With keys unconfigured the Feign interceptor
+# stays dormant and calls proceed without the service-authorization header.
+app:
+  security:
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: appointment-service
+
+# =============================================================================
 # Service Discovery Configuration
 # =============================================================================
 eureka:

@@ -47,6 +47,15 @@ eureka:
   instance:
     preferIpAddress: false
 
+# Feign client tuning: audit emission is best-effort and must never stall
+# request threads waiting on the audit service.
+feign:
+  client:
+    config:
+      audit-service:
+        connect-timeout: 1000
+        read-timeout: 2000
+
 # JWT Configuration
 jwt:
   expiration: 300000 # 5 minutes in milliseconds
@@ -112,3 +121,12 @@ app:
     cookies:
       secure: false
       same-site: Lax
+    # Outbound service credentials: this service signs 30-second RS256
+    # credentials (sub auth-service) for its Feign calls to audit-service
+    # and notification-service. Empty defaults keep the Feign interceptors
+    # dormant locally until keys are provisioned; targets then reject the
+    # unauthenticated calls exactly as before.
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: auth-service

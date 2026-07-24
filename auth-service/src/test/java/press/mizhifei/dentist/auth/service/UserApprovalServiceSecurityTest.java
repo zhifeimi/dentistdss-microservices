@@ -3,6 +3,7 @@ package press.mizhifei.dentist.auth.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.client.NotificationServiceClient;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.ApprovalRequestResponse;
@@ -18,6 +19,7 @@ import press.mizhifei.dentist.auth.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -25,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -37,6 +40,7 @@ class UserApprovalServiceSecurityTest {
     private ClinicRepository clinicRepository;
     private NotificationServiceClient notificationServiceClient;
     private AuthSessionService authSessionService;
+    private AuditEventPublisher auditEventPublisher;
     private UserApprovalService userApprovalService;
 
     @BeforeEach
@@ -46,12 +50,14 @@ class UserApprovalServiceSecurityTest {
         clinicRepository = mock(ClinicRepository.class);
         notificationServiceClient = mock(NotificationServiceClient.class);
         authSessionService = mock(AuthSessionService.class);
+        auditEventPublisher = mock(AuditEventPublisher.class);
         userApprovalService = new UserApprovalService(
                 approvalRequestRepository,
                 userRepository,
                 clinicRepository,
                 notificationServiceClient,
-                authSessionService);
+                authSessionService,
+                auditEventPublisher);
         when(notificationServiceClient.sendNotificationEmail(any()))
                 .thenReturn(ResponseEntity.ok("sent"));
         when(approvalRequestRepository.save(any(UserApprovalRequest.class)))
@@ -121,6 +127,46 @@ class UserApprovalServiceSecurityTest {
         assertTrue(response.isSuccess());
         assertTrue(user.isEnabled());
         verify(authSessionService).publishSecurityChangeAndRevokeAll(user);
+    }
+
+    @Test
+    void approvalEmitsAuditEventWithApplicantAndReviewerAttribution() {
+        User user = pendingUser(Role.DENTIST, true);
+        UserApprovalRequest request = pendingRequest(Role.DENTIST, 9L);
+        stubStaffReview(user, request);
+
+        userApprovalService
+                .reviewApprovalRequest(7, new ReviewApprovalRequest(true, "approved"), 100L);
+
+        verify(auditEventPublisher).publish(
+                eq("USER_APPROVAL_DECIDED"),
+                eq("approval-request:7"),
+                eq(42L),
+                eq(9L),
+                eq(Map.of(
+                        "decision", "APPROVED",
+                        "requestedRole", "DENTIST",
+                        "reviewedBy", 100L)));
+    }
+
+    @Test
+    void rejectionEmitsAuditEventForTheRejectedRequest() {
+        User user = pendingUser(Role.DENTIST, true);
+        UserApprovalRequest request = pendingRequest(Role.DENTIST, 9L);
+        stubStaffReview(user, request);
+
+        userApprovalService
+                .reviewApprovalRequest(7, new ReviewApprovalRequest(false, "not qualified"), 100L);
+
+        verify(auditEventPublisher).publish(
+                eq("USER_APPROVAL_DECIDED"),
+                eq("approval-request:7"),
+                eq(42L),
+                eq(9L),
+                eq(Map.of(
+                        "decision", "REJECTED",
+                        "requestedRole", "DENTIST",
+                        "reviewedBy", 100L)));
     }
 
     @Test

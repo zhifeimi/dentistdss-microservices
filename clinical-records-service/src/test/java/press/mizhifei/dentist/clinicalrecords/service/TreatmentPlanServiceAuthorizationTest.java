@@ -2,6 +2,7 @@ package press.mizhifei.dentist.clinicalrecords.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.access.AccessDeniedException;
 import press.mizhifei.dentist.clinicalrecords.client.AuthServiceClient;
 import press.mizhifei.dentist.clinicalrecords.client.ClinicServiceClient;
@@ -16,6 +17,7 @@ import press.mizhifei.dentist.clinicalrecords.repository.TreatmentPlanRepository
 import press.mizhifei.dentist.clinicalrecords.security.ClinicalRecordsActor;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -65,6 +67,27 @@ class TreatmentPlanServiceAuthorizationTest {
         assertEquals("ACCEPTED", response.getStatus());
         verify(treatmentPlanRepository).findByIdAndPatientId(100, 42L);
         verify(treatmentPlanRepository, never()).findById(anyInt());
+    }
+
+    @Test
+    void acceptanceSendsValidInAppNotificationPayloadForThePatient() {
+        TreatmentPlan plan = treatmentPlan(100, 42L, 84L, 7L, "PROPOSED");
+        when(treatmentPlanRepository.findByIdAndPatientId(100, 42L)).thenReturn(Optional.of(plan));
+        when(treatmentPlanRepository.save(plan)).thenReturn(plan);
+        when(treatmentPlanItemRepository.findByTreatmentPlanIdOrderBySequenceOrder(100))
+                .thenReturn(List.of());
+
+        service.acceptTreatmentPlan(patientActor(), 100);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationClient).sendNotification(captor.capture());
+        Map<String, Object> payload = captor.getValue();
+        assertEquals(42L, payload.get("userId"));
+        assertEquals("IN_APP", payload.get("type"));
+        assertEquals("Treatment plan accepted", payload.get("subject"));
+        assertEquals("Your treatment plan has been accepted", payload.get("body"));
+        assertEquals(Map.of("treatment_plan_id", 100), payload.get("metadata"));
     }
 
     @Test

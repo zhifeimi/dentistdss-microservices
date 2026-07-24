@@ -8,6 +8,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.client.NotificationServiceClient;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.ApprovalRequestResponse;
@@ -48,6 +49,7 @@ class AuthServiceOnboardingSecurityTest {
     private NotificationServiceClient notificationServiceClient;
     private UserApprovalService userApprovalService;
     private AuthSessionService authSessionService;
+    private AuditEventPublisher auditEventPublisher;
     private AuthService authService;
 
     @BeforeEach
@@ -58,13 +60,15 @@ class AuthServiceOnboardingSecurityTest {
         notificationServiceClient = mock(NotificationServiceClient.class);
         userApprovalService = mock(UserApprovalService.class);
         authSessionService = mock(AuthSessionService.class);
+        auditEventPublisher = mock(AuditEventPublisher.class);
         authService = new AuthService(
                 userRepository,
                 clinicRepository,
                 passwordEncoder,
                 notificationServiceClient,
                 userApprovalService,
-                authSessionService);
+                authSessionService,
+                auditEventPublisher);
         ReflectionTestUtils.setField(authService, "codeExpiryMinutes", 10L);
         ReflectionTestUtils.setField(authService, "verificationCodePepper", "test-pepper");
         when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");

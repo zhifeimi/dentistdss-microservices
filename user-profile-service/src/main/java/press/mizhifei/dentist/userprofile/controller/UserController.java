@@ -5,8 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 import press.mizhifei.dentist.security.AuthenticatedUser;
 import press.mizhifei.dentist.userprofile.dto.ApiResponse;
@@ -40,8 +40,11 @@ public class UserController {
     }
 
     @GetMapping("/{id}/email")
-    public String getUserEmail(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
-        requireSelfOrSystemAdmin(id, jwt);
+    public String getUserEmail(@PathVariable Long id, Authentication authentication) {
+        if (hasContactReadAuthority(authentication)) {
+            return userService.getUserEmail(id);
+        }
+        requireSelfOrSystemAdmin(id, authentication);
         return userService.getUserEmail(id);
     }
 
@@ -53,8 +56,8 @@ public class UserController {
     @GetMapping("/{id}/details")
     public ResponseEntity<ApiResponse<UserDetailsResponse>> getUserDetails(
             @PathVariable Long id,
-            @AuthenticationPrincipal Jwt jwt) {
-        requireSelfOrSystemAdmin(id, jwt);
+            Authentication authentication) {
+        requireSelfOrSystemAdmin(id, authentication);
         return ResponseEntity.ok(userService.getUserDetails(id));
     }
 
@@ -80,8 +83,8 @@ public class UserController {
     public ResponseEntity<ApiResponse<UserResponse>> updateUserProfile(
             @PathVariable Long userId,
             @Valid @RequestBody UserUpdateRequest updateRequest,
-            @AuthenticationPrincipal Jwt jwt) {
-        requireSelfOrSystemAdmin(userId, jwt);
+            Authentication authentication) {
+        requireSelfOrSystemAdmin(userId, authentication);
         ApiResponse<UserResponse> response = userService.updateUserProfile(userId, updateRequest);
         return ResponseEntity.ok(response);
     }
@@ -92,11 +95,26 @@ public class UserController {
     }
 
     /**
+     * Verified service callers holding the {@code user:contact:read} scope
+     * (granted to notification-service for recipient resolution) may read
+     * contact details for any user. The scope is bound to the caller's key by
+     * the service-credential decoder, so the authority is server-verified.
+     */
+    private boolean hasContactReadAuthority(Authentication authentication) {
+        return authentication != null
+                && authentication.getAuthorities().stream().anyMatch(authority ->
+                        "SERVICE_USER_CONTACT_READ".equals(authority.getAuthority()));
+    }
+
+    /**
      * Users may read or update only their own record; the system admin is
      * unrestricted.
      */
-    private void requireSelfOrSystemAdmin(Long requestedUserId, Jwt jwt) {
-        AuthenticatedUser user = AuthenticatedUser.from(jwt);
+    private void requireSelfOrSystemAdmin(Long requestedUserId, Authentication authentication) {
+        if (!(authentication instanceof JwtAuthenticationToken jwtToken)) {
+            throw new AccessDeniedException("Authenticated principal is not a JWT");
+        }
+        AuthenticatedUser user = AuthenticatedUser.from(jwtToken.getToken());
         if (user.hasRole("SYSTEM_ADMIN")) {
             return;
         }

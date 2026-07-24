@@ -27,8 +27,16 @@ Create these KV v2 records:
 
 - `kv/apps/dentistdss/dev/runtime`
 - `kv/apps/dentistdss/dev/genai-service-auth`
+- `kv/apps/dentistdss/dev/service-auth/auth`
+- `kv/apps/dentistdss/dev/service-auth/appointment`
+- `kv/apps/dentistdss/dev/service-auth/clinical-records`
+- `kv/apps/dentistdss/dev/service-auth/notification`
 - `kv/apps/dentistdss/prod/runtime`
 - `kv/apps/dentistdss/prod/genai-service-auth`
+- `kv/apps/dentistdss/prod/service-auth/auth`
+- `kv/apps/dentistdss/prod/service-auth/appointment`
+- `kv/apps/dentistdss/prod/service-auth/clinical-records`
+- `kv/apps/dentistdss/prod/service-auth/notification`
 
 Each environment requires a `vault-dentistdss-token` Secret in its application
 namespace. The token must have read access only to that environment's runtime
@@ -76,6 +84,34 @@ GENAI_SERVICE_AUTH_KEY_ID
 Use a single-line PKCS#8 private key and X.509 public key. The chart references
 all three values only from `api-gateway`; `genai-service` receives only the
 public key and key ID. Do not add these values to the broad runtime record.
+
+Each `service-auth/<issuer>` record holds one dedicated RSA key pair per
+issuing service:
+
+```text
+SERVICE_AUTH_PRIVATE_KEY
+SERVICE_AUTH_PUBLIC_KEY
+SERVICE_AUTH_KEY_ID
+```
+
+Issuers sign short-lived (30-second) audience-scoped RS256 credentials for
+authenticated backend-to-backend calls. The chart wires the records as follows
+(every reference is `optional: true` — until the records are seeded, issuers
+stay dormant and target endpoints reject uncredentialed calls, as before):
+
+- each issuer (`auth-service`, `appointment-service`,
+  `clinical-records-service`, `notification-service`) receives its own private
+  key and key ID from its own record;
+- `notification-service` additionally trusts the public keys of `auth-service`
+  (scope `notification:email`) and of `appointment-service` and
+  `clinical-records-service` (scope `notification:send`);
+- `audit-service` trusts `auth-service` (scope `audit:ingest`);
+- `user-profile-service` trusts `notification-service` (scope
+  `user:contact:read`).
+
+Use a single-line PKCS#8 private key and X.509 public key per pair, and a
+unique `SERVICE_AUTH_KEY_ID` per issuer. Do not reuse the JWT keys or the
+gateway-to-GenAI keys, and never add these values to the broad runtime record.
 
 Seed each runtime record interactively without printing credentials:
 

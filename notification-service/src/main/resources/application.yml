@@ -94,3 +94,33 @@ app:
     base-url: ${BASE_URL:http://localhost:3000}
   email:
     from-email: ${MAIL_USERNAME}
+  # Service credentials: notification-service is both a caller (its own key
+  # signs user-profile contact reads) and a target (auth-service may send
+  # email; appointment/clinical-records may create in-app notifications).
+  # Empty key material stays dormant at startup; verification then fails
+  # closed at request time.
+  security:
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: notification-service
+      audience: notification-service
+      trusted-keys:
+        auth:
+          key-id: ${SERVICE_AUTH_KEY_ID_AUTH:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:}
+          subject: auth-service
+          scopes:
+            - notification:email
+        appointment:
+          key-id: ${SERVICE_AUTH_KEY_ID_APPOINTMENT:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT:}
+          subject: appointment-service
+          scopes:
+            - notification:send
+        clinicalrecords:
+          key-id: ${SERVICE_AUTH_KEY_ID_CLINICALRECORDS:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS:}
+          subject: clinical-records-service
+          scopes:
+            - notification:send

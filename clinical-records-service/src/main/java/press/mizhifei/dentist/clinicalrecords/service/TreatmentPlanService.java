@@ -314,11 +314,11 @@ public class TreatmentPlanService {
     private void sendNotificationSafely(TreatmentPlan plan, String action) {
         try {
             Map<String, Object> notification = new HashMap<>();
-            notification.put("type", "TREATMENT_PLAN_" + action);
-            notification.put("recipientId", plan.getPatientId());
-            notification.put("title", "Treatment Plan " + action);
-            notification.put("message", "Your treatment plan has been " + action.toLowerCase());
-            notification.put("data", Map.of("treatmentPlanId", plan.getId()));
+            notification.put("userId", plan.getPatientId());
+            notification.put("type", "IN_APP");
+            notification.put("subject", "Treatment plan " + action.toLowerCase());
+            notification.put("body", "Your treatment plan has been " + action.toLowerCase());
+            notification.put("metadata", Map.of("treatment_plan_id", plan.getId()));
             notificationClient.sendNotification(notification);
         } catch (Exception exception) {
             log.warn("Treatment-plan notification delivery failed");

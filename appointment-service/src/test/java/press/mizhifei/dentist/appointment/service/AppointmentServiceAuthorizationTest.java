@@ -3,6 +3,7 @@ package press.mizhifei.dentist.appointment.service;
 import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.security.access.AccessDeniedException;
 import press.mizhifei.dentist.appointment.client.UserProfileServiceClient;
@@ -27,12 +28,14 @@ import press.mizhifei.dentist.appointment.security.AppointmentActor;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -197,6 +200,64 @@ class AppointmentServiceAuthorizationTest {
         verify(appointmentRepository).findByIdAndDentistId(100L, 84L);
         verify(appointmentRepository).confirmAppointment(100L, 84L);
         verify(appointmentRepository, never()).findById(any());
+    }
+
+    @Test
+    void confirmationSendsValidNotificationPayloadForThePatient() {
+        Appointment appointment = appointment(100L, 42L, 84L, 7L);
+        Appointment confirmed = appointment(100L, 42L, 84L, 7L);
+        confirmed.setStatus(AppointmentStatus.CONFIRMED);
+        confirmed.setConfirmedBy(84L);
+        AppointmentActor actor = new AppointmentActor(
+                84L,
+                Set.of("DENTIST"),
+                7L);
+        when(appointmentRepository.findByIdAndDentistId(100L, 84L))
+                .thenReturn(Optional.of(appointment));
+        when(appointmentRepository.confirmAppointment(100L, 84L))
+                .thenReturn(confirmed);
+        when(userProfileServiceClient.getUserFullName(42L)).thenReturn("Jane Patient");
+        when(userProfileServiceClient.getUserFullName(84L)).thenReturn("Ann Dentist");
+
+        service.confirmAppointment(100L, actor);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationClient).sendNotification(captor.capture());
+        Map<String, Object> payload = captor.getValue();
+        assertEquals(42L, payload.get("userId"));
+        assertEquals("EMAIL", payload.get("type"));
+        assertEquals("Your appointment is confirmed", payload.get("subject"));
+        String body = (String) payload.get("body");
+        assertTrue(body.contains("Jane Patient"));
+        assertTrue(body.contains("Ann Dentist"));
+        assertTrue(body.contains(appointment.getAppointmentDate().toString()));
+        assertEquals(Map.of("appointment_id", 100L), payload.get("metadata"));
+    }
+
+    @Test
+    void cancellationSendsValidNotificationPayloadWithTheCancellationReason() {
+        Appointment appointment = appointment(100L, 42L, 84L, 7L);
+        Appointment cancelled = appointment(100L, 42L, 84L, 7L);
+        cancelled.setStatus(AppointmentStatus.CANCELLED);
+        when(appointmentRepository.findByIdAndPatientId(100L, 42L))
+                .thenReturn(Optional.of(appointment));
+        when(appointmentRepository.cancelAppointment(100L, "Schedule changed", 42L))
+                .thenReturn(cancelled);
+
+        service.cancelAppointment(100L, "Schedule changed", patientActor());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(notificationClient).sendNotification(captor.capture());
+        Map<String, Object> payload = captor.getValue();
+        assertEquals(42L, payload.get("userId"));
+        assertEquals("EMAIL", payload.get("type"));
+        assertEquals("Your appointment has been cancelled", payload.get("subject"));
+        String body = (String) payload.get("body");
+        assertTrue(body.contains(appointment.getAppointmentDate().toString()));
+        assertTrue(body.contains("Schedule changed"));
+        assertEquals(Map.of("appointment_id", 100L), payload.get("metadata"));
     }
 
     @Test

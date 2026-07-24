@@ -14,6 +14,9 @@ externalSecrets:
   tokenSecretName: vault-dentistdss-token
   runtimePath: apps/dentistdss/dev/runtime
   genaiServiceAuthPath: apps/dentistdss/dev/genai-service-auth
+  # One Vault record per issuing service (auth/appointment/clinical-records/
+  # notification), each holding SERVICE_AUTH_PRIVATE_KEY, _PUBLIC_KEY, _KEY_ID.
+  serviceAuthPath: apps/dentistdss/dev/service-auth
   # The genai-service-auth record historically came from the cluster-wide
   # store; override these to move it onto the namespace-scoped store.
   genaiStoreKind: ClusterSecretStore

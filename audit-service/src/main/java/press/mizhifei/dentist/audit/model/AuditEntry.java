@@ -23,9 +23,14 @@ public class AuditEntry {
     @Id
     private String id;
 
-    private String actor;       // user or service that triggered
+    /** Verified service caller the credential subject identifies; server-assigned. */
+    private String actor;
     private String action;      // e.g. CREATE_PATIENT
     private String target;      // resource id or description
+
+    /** Caller-claimed context: who the event concerns (not independently verified). */
+    private Long assertedUserId;
+    private Long assertedClinicId;
 
     private LocalDateTime timestamp;
 

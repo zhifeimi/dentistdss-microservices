@@ -13,6 +13,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.dto.LoginRequest;
 import press.mizhifei.dentist.auth.model.AuthSession;
 import press.mizhifei.dentist.auth.model.Role;
@@ -24,6 +25,7 @@ import press.mizhifei.dentist.auth.security.UserPrincipal;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -52,6 +54,7 @@ class AuthSessionServiceTest {
     private SecurityStateOutboxService outboxService;
     private JwtTokenProvider tokenProvider;
     private SecurityStateService securityStateService;
+    private AuditEventPublisher auditEventPublisher;
     private AuthSessionService service;
     private User user;
     private Authentication authentication;
@@ -65,6 +68,7 @@ class AuthSessionServiceTest {
         outboxService = mock(SecurityStateOutboxService.class);
         tokenProvider = mock(JwtTokenProvider.class);
         securityStateService = mock(SecurityStateService.class);
+        auditEventPublisher = mock(AuditEventPublisher.class);
         service = new AuthSessionService(
                 authenticationManager,
                 userRepository,
@@ -72,7 +76,8 @@ class AuthSessionServiceTest {
                 revocationService,
                 outboxService,
                 tokenProvider,
-                securityStateService);
+                securityStateService,
+                auditEventPublisher);
         ReflectionTestUtils.setField(service, "refreshTokenDays", 30L);
         ReflectionTestUtils.setField(service, "accessTokenExpirationMs", 300_000L);
         ReflectionTestUtils.setField(service, "jwtClockSkewSeconds", 60L);
@@ -137,6 +142,24 @@ class AuthSessionServiceTest {
         AuthSession persisted = persistedNewSession();
         assertNotNull(UUID.fromString(persisted.getFamilyId()));
         verify(tokenProvider).generateToken(authentication, persisted.getFamilyId());
+    }
+
+    @Test
+    void passwordLoginEmitsAuditEventForTheNewSessionFamily() {
+        when(userRepository.findByEmailForUpdate("patient@example.com"))
+                .thenReturn(Optional.of(user));
+        when(authenticationManager.authenticate(any(Authentication.class)))
+                .thenReturn(authentication);
+
+        service.authenticate(new LoginRequest("patient@example.com", "password"));
+
+        AuthSession persisted = persistedNewSession();
+        verify(auditEventPublisher).publish(
+                eq("LOGIN_SUCCESS"),
+                eq("user:42"),
+                eq(42L),
+                eq(null),
+                eq(Map.of("familyId", persisted.getFamilyId())));
     }
 
     @Test
@@ -221,6 +244,58 @@ class AuthSessionServiceTest {
         verify(sessionRepository).revokeActiveByUserIdAndFamilyId(eq(42L),
                 eq("concurrent-family"),
                 any(LocalDateTime.class));
+    }
+
+    @Test
+    void refreshReuseEmitsAuditEventForTheRevokedFamily() {
+        AuthSession reused = AuthSession.builder()
+                .userId(42L)
+                .familyId("compromised-family")
+                .tokenHash("reused-token-hash")
+                .createdAt(LocalDateTime.now().minusDays(2))
+                .expiresAt(LocalDateTime.now().plusDays(1))
+                .revokedAt(LocalDateTime.now().minusDays(1))
+                .build();
+        when(sessionRepository.findByTokenHash(anyString()))
+                .thenReturn(Optional.of(reused));
+
+        assertThrows(BadCredentialsException.class,
+                () -> service.refresh("reused-refresh-token"));
+
+        verify(auditEventPublisher).publish(
+                eq("SESSION_FAMILY_REVOKED"),
+                eq("user:42"),
+                eq(42L),
+                eq(null),
+                eq(Map.of(
+                        "familyId", "compromised-family",
+                        "reason", "refresh-token-reuse")));
+    }
+
+    @Test
+    void refreshRotationConflictEmitsAuditEventForTheRevokedFamily() {
+        AuthSession current = activeSession("concurrent-family");
+        when(sessionRepository.findByTokenHash(anyString()))
+                .thenReturn(Optional.of(current));
+        when(userRepository.findById(42L)).thenReturn(Optional.of(user));
+        when(sessionRepository.rotateIfActive(
+                anyString(),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                anyString()))
+                .thenReturn(0);
+
+        assertThrows(BadCredentialsException.class,
+                () -> service.refresh("concurrently-reused-token"));
+
+        verify(auditEventPublisher).publish(
+                eq("SESSION_FAMILY_REVOKED"),
+                eq("user:42"),
+                eq(42L),
+                eq(null),
+                eq(Map.of(
+                        "familyId", "concurrent-family",
+                        "reason", "refresh-token-rotation-conflict")));
     }
 
     @Test

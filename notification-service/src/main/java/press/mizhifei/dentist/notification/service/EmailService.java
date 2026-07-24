@@ -10,7 +10,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
-import press.mizhifei.dentist.notification.client.AuthServiceClient;
+import press.mizhifei.dentist.notification.client.UserProfileContactClient;
 import java.util.Map;
 
 /**
@@ -26,14 +26,14 @@ import java.util.Map;
 public class EmailService {
 
     private final JavaMailSender mailSender;
-    private final AuthServiceClient authServiceClient;
+    private final UserProfileContactClient userProfileContactClient;
 
     @Value("${app.email.from-email:${spring.mail.username}}")
     private String fromEmail;
-    
+
     public void sendEmail(Long userId, String subject, String body) {
         try {
-            String userEmail = authServiceClient.getUserEmail(userId);
+            String userEmail = userProfileContactClient.getUserEmail(userId);
             sendEmail(userEmail, subject, body, false);
         } catch (Exception e) {
             log.error("Failed to fetch email for user {}: {}", userId, e.getMessage());

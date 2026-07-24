@@ -9,6 +9,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.AuthResponse;
 import press.mizhifei.dentist.auth.dto.LoginRequest;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -39,6 +41,7 @@ class AuthControllerTest {
     private AuthSessionService authSessionService;
     private AuthCookieService authCookieService;
     private SecurityStateService securityStateService;
+    private AuditEventPublisher auditEventPublisher;
     private AuthController controller;
 
     @BeforeEach
@@ -47,11 +50,13 @@ class AuthControllerTest {
         authSessionService = mock(AuthSessionService.class);
         authCookieService = mock(AuthCookieService.class);
         securityStateService = mock(SecurityStateService.class);
+        auditEventPublisher = mock(AuditEventPublisher.class);
         controller = new AuthController(
                 authService,
                 authSessionService,
                 authCookieService,
-                securityStateService);
+                securityStateService,
+                auditEventPublisher);
         when(securityStateService.isAllowed(
                 anyString(),
                 anyString(),
@@ -206,6 +211,66 @@ class AuthControllerTest {
         verify(authSessionService).revoke("refresh-token");
         verify(authSessionService, never()).revokeFamily(42L, "family-1");
         verify(authCookieService).clearSessionCookies(any());
+    }
+
+    @Test
+    void logoutEmitsAuditEventForTheRevokedFamily() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        when(authCookieService.readRefreshToken(request)).thenReturn("refresh-token");
+        when(authSessionService.revoke("refresh-token"))
+                .thenReturn(Optional.of(new AuthSessionService.RevokedFamily(42L, "family-1")));
+
+        controller.logoutUser(request, "csrf-cookie", "csrf-header", null);
+
+        verify(auditEventPublisher).publish(
+                eq("LOGOUT"), eq("user:42"), eq(42L), eq(null),
+                eq(java.util.Map.of("familyId", "family-1")));
+    }
+
+    @Test
+    void logoutEmitsAuditEventFromTheBearerIdentityWhenNoRefreshCookie() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        when(authCookieService.readRefreshToken(request)).thenReturn(null);
+        UserPrincipal principal = UserPrincipal.builder()
+                .id(43L)
+                .sessionFamilyId("family-9")
+                .enabled(true)
+                .build();
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                principal,
+                null,
+                java.util.List.of());
+
+        controller.logoutUser(request, null, null, authentication);
+
+        verify(auditEventPublisher).publish(
+                eq("LOGOUT"), eq("user:43"), eq(43L), eq(null),
+                eq(java.util.Map.of("familyId", "family-9")));
+    }
+
+    @Test
+    void anonymousLogoutEmitsNoAuditEvent() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        when(authCookieService.readRefreshToken(request)).thenReturn(null);
+
+        controller.logoutUser(request, null, null, null);
+
+        verify(auditEventPublisher, never())
+                .publish(anyString(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    void failedLogoutEmitsNoAuditEvent() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        when(authCookieService.readRefreshToken(request)).thenReturn("refresh-token");
+        doThrow(new SecurityStateService.SecurityStateUnavailableException(
+                new RedisConnectionFailureException("unavailable")))
+                .when(authSessionService).revoke("refresh-token");
+
+        controller.logoutUser(request, "csrf-cookie", "csrf-header", null);
+
+        verify(auditEventPublisher, never())
+                .publish(anyString(), anyString(), any(), any(), any());
     }
 
     @Test

@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.AuthResponse;
 import press.mizhifei.dentist.auth.dto.ChangePasswordRequest;
@@ -40,6 +41,7 @@ import press.mizhifei.dentist.auth.service.SecurityStateService;
 import press.mizhifei.dentist.auth.security.UserPrincipal;
 
 import java.time.Duration;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -51,6 +53,7 @@ public class AuthController {
     private final AuthSessionService authSessionService;
     private final AuthCookieService authCookieService;
     private final SecurityStateService securityStateService;
+    private final AuditEventPublisher auditEventPublisher;
 
     @GetMapping("/csrf")
     public ResponseEntity<Void> csrf(CsrfToken csrfToken) {
@@ -118,8 +121,8 @@ public class AuthController {
         }
 
         HttpHeaders headers = new HttpHeaders();
+        AuthSessionService.RevokedFamily revokedRefreshFamily = null;
         try {
-            AuthSessionService.RevokedFamily revokedRefreshFamily = null;
             if (StringUtils.hasText(refreshToken)) {
                 revokedRefreshFamily = authSessionService.revoke(refreshToken).orElse(null);
             }
@@ -137,6 +140,28 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .headers(headers)
                     .body(ApiResponse.error("Logout could not be completed"));
+        }
+
+        Long auditUserId = null;
+        String auditFamilyId = null;
+        if (revokedRefreshFamily != null) {
+            auditUserId = revokedRefreshFamily.userId();
+            auditFamilyId = revokedRefreshFamily.familyId();
+        } else if (authentication != null
+                && authentication.getPrincipal() instanceof UserPrincipal principal
+                && principal.getId() != null) {
+            auditUserId = principal.getId();
+            auditFamilyId = principal.getSessionFamilyId();
+        }
+        if (auditUserId != null) {
+            auditEventPublisher.publish(
+                    "LOGOUT",
+                    "user:" + auditUserId,
+                    auditUserId,
+                    null,
+                    auditFamilyId == null
+                            ? Map.of()
+                            : Map.of("familyId", auditFamilyId));
         }
 
         authCookieService.clearSessionCookies(headers);

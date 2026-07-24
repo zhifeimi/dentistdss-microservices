@@ -21,6 +21,21 @@ jwt:
   issuer: ${JWT_ISSUER:http://localhost:8080}
   audience: ${JWT_AUDIENCE:dentistdss-api}
 
+# Service credentials: audit ingestion accepts only verified service callers
+# (currently auth-service) holding the audit:ingest scope. Empty key material
+# stays dormant at startup; verification then fails closed at request time.
+app:
+  security:
+    service-auth:
+      audience: audit-service
+      trusted-keys:
+        auth:
+          key-id: ${SERVICE_AUTH_KEY_ID_AUTH:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:}
+          subject: auth-service
+          scopes:
+            - audit:ingest
+
 eureka:
   client:
     serviceUrl:

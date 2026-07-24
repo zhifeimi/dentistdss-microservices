@@ -69,6 +69,7 @@ class AnonymousSessionFilterTest {
                         .header("X-Session-ID", "attacker-session")
                         .header("X-Gateway-Anonymous-Proof", "attacker-proof")
                         .header(GenAIServiceTokenIssuer.HEADER_NAME, "Bearer attacker-token")
+                        .header("X-Service-Authorization", "Bearer forged-service-credential")
                         .header("X-User-ID", "999")
                         .header("X-User-Email", "attacker@example.com")
                         .header("X-User-Roles", "SYSTEM_ADMIN")
@@ -95,6 +96,8 @@ class AnonymousSessionFilterTest {
         assertEquals(SERVER_PROOF, headers.getFirst("X-Gateway-Anonymous-Proof"));
         assertEquals("Bearer service-token",
                 headers.getFirst(GenAIServiceTokenIssuer.HEADER_NAME));
+        assertNull(headers.getFirst("X-Service-Authorization"),
+                "caller-supplied inter-service credentials are always stripped");
         assertNull(headers.getFirst("X-User-ID"));
         assertNull(headers.getFirst("X-User-Email"));
         assertNull(headers.getFirst("X-User-Roles"));
@@ -142,6 +145,8 @@ class AnonymousSessionFilterTest {
         assertEquals("PATIENT,DENTIST", headers.getFirst("X-User-Roles"));
         assertEquals("7", headers.getFirst("X-Clinic-ID"));
         assertNull(headers.getFirst("X-Gateway-Anonymous-Proof"));
+        assertNull(headers.getFirst("X-Service-Authorization"),
+                "authenticated requests cannot smuggle inter-service credentials");
         verify(anonymousSessionService, never()).getOrCreateAnonymousSession(
                 any(),
                 any(ServerHttpRequest.class));
@@ -496,6 +501,8 @@ class AnonymousSessionFilterTest {
                         MockServerHttpRequest.get(path)
                                 .header("X-Session-ID", "caller-controlled-session")
                                 .header("X-Gateway-Anonymous-Proof", "caller-controlled-proof")
+                                .header("X-Service-Authorization",
+                                        "Bearer caller-controlled-service-credential")
                                 .header("X-User-ID", "999")
                                 .header("X-User-Roles", "SYSTEM_ADMIN")
                                 .build())

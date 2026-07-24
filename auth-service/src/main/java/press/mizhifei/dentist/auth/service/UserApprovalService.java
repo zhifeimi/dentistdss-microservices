@@ -6,6 +6,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.ApprovalRequestResponse;
 import press.mizhifei.dentist.auth.dto.ReviewApprovalRequest;
@@ -45,6 +46,7 @@ public class UserApprovalService {
     private final ClinicRepository clinicRepository;
     private final NotificationServiceClient notificationServiceClient;
     private final AuthSessionService authSessionService;
+    private final AuditEventPublisher auditEventPublisher;
 
     @Transactional(readOnly = true)
     public boolean hasMatchingPendingApprovalRequest(
@@ -177,6 +179,19 @@ public class UserApprovalService {
                 clinicRepository.delete(clinicToApprove);
             }
         }
+
+        Long decidedClinicId = clinicToApprove != null
+                ? clinicToApprove.getId()
+                : approvalRequest.getClinicId();
+        auditEventPublisher.publish(
+                "USER_APPROVAL_DECIDED",
+                "approval-request:" + requestId,
+                user.getId(),
+                decidedClinicId,
+                Map.of(
+                        "decision", reviewRequest.getApproved() ? "APPROVED" : "REJECTED",
+                        "requestedRole", approvalRequest.getRequestedRole().name(),
+                        "reviewedBy", reviewedBy));
 
         sendApprovalResultNotification(
                 user, reviewRequest.getApproved(), reviewRequest.getReviewNotes());

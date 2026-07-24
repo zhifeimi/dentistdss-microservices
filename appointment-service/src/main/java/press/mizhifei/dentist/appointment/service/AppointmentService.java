@@ -133,7 +133,7 @@ public class AppointmentService {
                 "Appointment cannot be confirmed in its current state");
         log.info("Confirmed appointment {} by user {}", appointmentId, actor.userId());
         try {
-            sendAppointmentNotification(saved, "appointment_confirmation");
+            sendAppointmentNotification(saved);
         } catch (Exception exception) {
             log.warn("Appointment confirmation notification was not delivered");
         }
@@ -829,47 +829,42 @@ public class AppointmentService {
             String reason) {
         Map<String, Object> notificationRequest = new HashMap<>();
         notificationRequest.put("userId", appointment.getPatientId());
-        notificationRequest.put("templateName", "appointment_cancelled");
         notificationRequest.put("type", "EMAIL");
-        Map<String, String> templateVariables = new HashMap<>();
-        templateVariables.put("patient_name", "Patient");
-        templateVariables.put(
-                "appointment_date",
-                appointment.getAppointmentDate().toString());
-        templateVariables.put("cancellation_reason", reason);
-        notificationRequest.put("templateVariables", templateVariables);
+        notificationRequest.put("subject", "Your appointment has been cancelled");
+        String body = "Your appointment on " + appointment.getAppointmentDate()
+                + " has been cancelled.";
+        if (reason != null && !reason.isBlank()) {
+            body = body + " Reason: " + reason;
+        }
+        notificationRequest.put("body", body);
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("appointment_id", appointment.getId());
+        notificationRequest.put("metadata", metadata);
         notificationClient.sendNotification(notificationRequest);
     }
 
-    private void sendAppointmentNotification(
-            Appointment appointment,
-            String templateName) {
+    private void sendAppointmentNotification(Appointment appointment) {
+        String patientName = "Patient";
+        try {
+            patientName = userProfileServiceClient.getUserFullName(appointment.getPatientId());
+        } catch (Exception exception) {
+            // Best-effort enrichment; fall back to a generic salutation.
+        }
+        String dentistName = "Dr. Dentist";
+        try {
+            dentistName = userProfileServiceClient.getUserFullName(appointment.getDentistId());
+        } catch (Exception exception) {
+            // Best-effort enrichment; fall back to a generic salutation.
+        }
         Map<String, Object> notificationRequest = new HashMap<>();
         notificationRequest.put("userId", appointment.getPatientId());
-        notificationRequest.put("templateName", templateName);
         notificationRequest.put("type", "EMAIL");
-        Map<String, String> templateVariables = new HashMap<>();
-        try {
-            templateVariables.put(
-                    "patient_name",
-                    userProfileServiceClient.getUserFullName(appointment.getPatientId()));
-        } catch (Exception exception) {
-            templateVariables.put("patient_name", "Patient");
-        }
-        try {
-            templateVariables.put(
-                    "dentist_name",
-                    userProfileServiceClient.getUserFullName(appointment.getDentistId()));
-        } catch (Exception exception) {
-            templateVariables.put("dentist_name", "Dr. Dentist");
-        }
-        templateVariables.put(
-                "appointment_date",
-                appointment.getAppointmentDate().toString());
-        templateVariables.put(
-                "appointment_time",
-                appointment.getStartTime().toString());
-        notificationRequest.put("templateVariables", templateVariables);
+        notificationRequest.put("subject", "Your appointment is confirmed");
+        notificationRequest.put(
+                "body",
+                "Hello " + patientName + ", your appointment with " + dentistName
+                        + " on " + appointment.getAppointmentDate()
+                        + " at " + appointment.getStartTime() + " is confirmed.");
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("appointment_id", appointment.getId());
         notificationRequest.put("metadata", metadata);

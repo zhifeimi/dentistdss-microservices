@@ -181,6 +181,8 @@ services:
       JWT_RSA_PRIVATE_KEY: ${JWT_RSA_PRIVATE_KEY:?JWT_RSA_PRIVATE_KEY is required}
       JWT_RSA_PUBLIC_KEY: ${JWT_RSA_PUBLIC_KEY:?JWT_RSA_PUBLIC_KEY is required}
       JWT_RSA_KEY_ID: ${JWT_RSA_KEY_ID:-dentistdss-homelab-1}
+      SERVICE_AUTH_PRIVATE_KEY: ${AUTH_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${AUTH_SERVICE_AUTH_KEY_ID:-auth-service-1}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
       EMAIL_VERIFICATION_CODE_PEPPER: ${EMAIL_VERIFICATION_CODE_PEPPER:?EMAIL_VERIFICATION_CODE_PEPPER is required}
@@ -247,6 +249,8 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SERVICE_AUTH_PUBLIC_KEY_NOTIFICATION: ${SERVICE_AUTH_PUBLIC_KEY_NOTIFICATION:-}
+      SERVICE_AUTH_KEY_ID_NOTIFICATION: ${SERVICE_AUTH_KEY_ID_NOTIFICATION:-notification-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8085/actuator/health >/dev/null"]
       interval: 15s
@@ -296,6 +300,14 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
       MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
       BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      SERVICE_AUTH_PRIVATE_KEY: ${NOTIFICATION_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${NOTIFICATION_SERVICE_AUTH_KEY_ID:-notification-service-1}
+      SERVICE_AUTH_PUBLIC_KEY_AUTH: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:-}
+      SERVICE_AUTH_KEY_ID_AUTH: ${SERVICE_AUTH_KEY_ID_AUTH:-auth-service-1}
+      SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT: ${SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT:-}
+      SERVICE_AUTH_KEY_ID_APPOINTMENT: ${SERVICE_AUTH_KEY_ID_APPOINTMENT:-appointment-service-1}
+      SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS: ${SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS:-}
+      SERVICE_AUTH_KEY_ID_CLINICALRECORDS: ${SERVICE_AUTH_KEY_ID_CLINICALRECORDS:-clinical-records-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8088/actuator/health >/dev/null"]
       interval: 15s
@@ -325,6 +337,8 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SERVICE_AUTH_PRIVATE_KEY: ${APPOINTMENT_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${APPOINTMENT_SERVICE_AUTH_KEY_ID:-appointment-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8089/actuator/health >/dev/null"]
       interval: 15s
@@ -354,6 +368,8 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SERVICE_AUTH_PRIVATE_KEY: ${CLINICAL_RECORDS_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${CLINICAL_RECORDS_SERVICE_AUTH_KEY_ID:-clinical-records-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8090/actuator/health >/dev/null"]
       interval: 15s
@@ -374,6 +390,8 @@ services:
       SPRING_DATA_MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss?authSource=admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
+      SERVICE_AUTH_PUBLIC_KEY_AUTH: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:-}
+      SERVICE_AUTH_KEY_ID_AUTH: ${SERVICE_AUTH_KEY_ID_AUTH:-auth-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8087/actuator/health >/dev/null"]
       interval: 15s

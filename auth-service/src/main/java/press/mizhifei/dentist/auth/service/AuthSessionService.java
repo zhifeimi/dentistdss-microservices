@@ -16,6 +16,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import press.mizhifei.dentist.auth.dto.AuthResponse;
 import press.mizhifei.dentist.auth.dto.LoginRequest;
 import press.mizhifei.dentist.auth.dto.SessionTokens;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.model.AuthSession;
 import press.mizhifei.dentist.auth.model.User;
 import press.mizhifei.dentist.auth.repository.AuthSessionRepository;
@@ -28,6 +29,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -43,6 +45,7 @@ public class AuthSessionService {
     private final SecurityStateOutboxService outboxService;
     private final JwtTokenProvider tokenProvider;
     private final SecurityStateService securityStateService;
+    private final AuditEventPublisher auditEventPublisher;
 
     @Value("${app.security.refresh-token-days:30}")
     private long refreshTokenDays;
@@ -96,6 +99,13 @@ public class AuthSessionService {
 
         if (!current.isActive(now)) {
             revokeFamilyWithinRefresh(current.getUserId(), current.getFamilyId(), now);
+            auditEventPublisher.publish(
+                    "SESSION_FAMILY_REVOKED",
+                    "user:" + current.getUserId(),
+                    current.getUserId(),
+                    null,
+                    Map.of("familyId", current.getFamilyId(),
+                            "reason", "refresh-token-reuse"));
             throw new BadCredentialsException("Refresh token reuse or expiry detected");
         }
 
@@ -131,6 +141,13 @@ public class AuthSessionService {
                 replacementHash);
         if (rotated != 1) {
             revokeFamilyWithinRefresh(current.getUserId(), current.getFamilyId(), now);
+            auditEventPublisher.publish(
+                    "SESSION_FAMILY_REVOKED",
+                    "user:" + current.getUserId(),
+                    current.getUserId(),
+                    null,
+                    Map.of("familyId", current.getFamilyId(),
+                            "reason", "refresh-token-rotation-conflict"));
             throw new BadCredentialsException("Refresh token reuse detected");
         }
 
@@ -228,6 +245,15 @@ public class AuthSessionService {
         if (!securityStateService.activateFamily(user.getId(), familyId, familyLifetime())) {
             throw new SecurityStateService.SecurityStateUnavailableException();
         }
+        // Single login-issuance point: both password login (authenticate) and
+        // federated login (issueForUser) funnel through here exactly once per
+        // new session family; refresh rotation deliberately does not.
+        auditEventPublisher.publish(
+                "LOGIN_SUCCESS",
+                "user:" + user.getId(),
+                user.getId(),
+                user.getClinicId(),
+                Map.of("familyId", familyId));
         return tokens(user, authentication, familyId, refreshToken);
     }
 

@@ -14,14 +14,59 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 | RBAC-04 | Clinical, appointment, user, clinic, notification, GenAI, system, and audit operations lack ownership checks | Service-layer resource and tenant policies | Parameterized cross-user/cross-clinic matrix passes | In progress |
 | ADMIN-01 | Spring Boot Admin and management endpoints are public | Remove public route; private authenticated management plane; health-only public exposure | Public Admin/refresh/config/route inspection requests fail | In progress |
 | SECRET-01 | Every pod receives the complete runtime secret and JWT private key | Per-service ExternalSecrets; auth-only signing key | Rendered manifests show least-privilege secret references | In progress |
-| DATA-01 | Shared DB schema mutates through Hibernate | Versioned Flyway owner and `ddl-auto: validate` everywhere | Migration succeeds against baseline; all services validate | In progress |
+| DATA-01 | Shared DB schema mutates through Hibernate | Versioned Flyway owner and `ddl-auto: validate` everywhere | Migration succeeds against baseline; all services validate | Partial (see notes) |
 | DATA-02 | Applications use shared/root database credentials | Per-service PostgreSQL and MongoDB users/grants | Unauthorized cross-database/table access fails | In progress |
 | DATA-03 | Dental image writes and validation are unsafe | Signature/decode limits, canonical re-encode, authorized ownership, cleanup/compensation | False MIME, polyglot, oversized pixels, and unauthorized access fail | In progress |
-| AUDIT-01 | Audit actor is caller-controlled and critical actions are not integrated | Server-attributed internal ingest, transactional outbox, append-only/tamper-evident store | Caller cannot forge actor; critical mutations emit immutable events | In progress |
+| AUDIT-01 | Audit actor is caller-controlled and critical actions are not integrated | Server-attributed internal ingest, transactional outbox, append-only/tamper-evident store | Caller cannot forge actor; critical mutations emit immutable events | Partial (see notes) |
 | RATE-01 | Session and GenAI limiter maps are bypassable/unbounded | Redis-backed signed sessions, quotas, TTLs, and cardinality limits | Rotation, restart, and multi-replica tests pass without key leaks | In progress |
 | ERROR-01 | Exception details leak to clients/logs | Shared safe error envelope and redaction | Responses contain no stack/SQL/SMTP/provider/token/PHI detail | In progress |
 | CORS-01 | CORS and cookie behavior are broader than required | Exact origins/methods/headers, Origin validation, anti-CSRF for cookie endpoints | Hostile Origin and missing/invalid CSRF requests fail | In progress |
 | SUPPLY-01 | Build inputs and vulnerabilities are not fully gated | Java 25, Enforcer, FindSecBugs, Dependency-Check, SBOM, Trivy, pinned actions/images | CI blocks policy violations and high/critical findings | In progress |
+
+## Finding notes
+
+### AUDIT-01 — partial: credentials and server attribution shipped
+
+Credential-based, server-attributed audit ingest landed on
+`agent/security-platform-hardening` (PR #22; CI confirmation pending):
+
+- Ingest authentication: audit-service `POST /audit/events` requires a
+  locally verified, audience-scoped service credential
+  (`SERVICE_AUDIT_INGEST`) — a 30-second RS256 JWT with a single audience,
+  key ID bound to the issuer subject and scope. The gateway strips any
+  inbound `X-Service-Authorization` before metadata headers are attached,
+  and only the auth-service key is trusted for ingestion
+  (`audit:ingest` scope).
+- Server attribution: audit events derive the actor from the verified
+  credential subject and request payload, never from caller-controlled
+  headers; auth-service emits events for security-critical account and
+  session mutations.
+- Deployment: per-issuer RSA pairs (auth, appointment, clinical-records,
+  notification) live in dedicated Vault `service-auth/<issuer>` records
+  (Helm) and compose environment variables; every reference is optional,
+  so unseeded deployments stay fail-closed — issuers remain dormant and
+  targets reject uncredentialed calls, as before.
+- Decision — no jti replay tracking: credentials carry a `jti`, but
+  verifiers do not persist it. The 30-second expiry, single audience, and
+  kid→scope binding are the controls; a replay store was judged
+  disproportionate for an internal, network-policy-restricted endpoint.
+- Caveat — best-effort emitter: auth-service audit emission is
+  fire-and-forget with failures logged and discarded, so events can be
+  lost during audit-service outages. The pending transactional outbox
+  closes this durability gap.
+
+Remaining: transactional outbox for emission durability, and
+append-only/tamper-evident audit storage.
+
+### DATA-01 — partial: Flyway baseline and validate shipped
+
+The `db-migrations` module with the frozen `V1__baseline.sql` and
+`ddl-auto: validate` across all seven JDBC services landed as `c150186`
+(PR #22); deployment `ddl-auto=update` overrides were removed, and the
+baseline-on-migrate adoption path was live-verified against PostgreSQL
+(both fresh-database apply and existing-database baseline). Completion
+awaits PR #22 CI confirmation that all seven `*SchemaContractTest` suites
+run green.
 
 ## Completion gates
 

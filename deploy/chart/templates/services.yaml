@@ -139,6 +139,120 @@ spec:
                   name: dentistdss-genai-service-auth
                   key: GENAI_SERVICE_AUTH_KEY_ID
                   optional: true
+            {{- else if eq $name "auth-service" }}
+            - name: SERVICE_AUTH_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-auth
+                  key: SERVICE_AUTH_PRIVATE_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-auth
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            {{- else if eq $name "appointment-service" }}
+            - name: SERVICE_AUTH_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-appointment
+                  key: SERVICE_AUTH_PRIVATE_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-appointment
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            {{- else if eq $name "clinical-records-service" }}
+            - name: SERVICE_AUTH_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-clinical-records
+                  key: SERVICE_AUTH_PRIVATE_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-clinical-records
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            {{- else if eq $name "notification-service" }}
+            - name: SERVICE_AUTH_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-notification
+                  key: SERVICE_AUTH_PRIVATE_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-notification
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            - name: SERVICE_AUTH_PUBLIC_KEY_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-auth
+                  key: SERVICE_AUTH_PUBLIC_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-auth
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            - name: SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-appointment
+                  key: SERVICE_AUTH_PUBLIC_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID_APPOINTMENT
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-appointment
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            - name: SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-clinical-records
+                  key: SERVICE_AUTH_PUBLIC_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID_CLINICALRECORDS
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-clinical-records
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            {{- else if eq $name "audit-service" }}
+            - name: SERVICE_AUTH_PUBLIC_KEY_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-auth
+                  key: SERVICE_AUTH_PUBLIC_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-auth
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
+            {{- else if eq $name "user-profile-service" }}
+            - name: SERVICE_AUTH_PUBLIC_KEY_NOTIFICATION
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-notification
+                  key: SERVICE_AUTH_PUBLIC_KEY
+                  optional: true
+            - name: SERVICE_AUTH_KEY_ID_NOTIFICATION
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-service-auth-notification
+                  key: SERVICE_AUTH_KEY_ID
+                  optional: true
             {{- end }}
             {{- range $key, $value := $environment }}
             - name: {{ $key }}

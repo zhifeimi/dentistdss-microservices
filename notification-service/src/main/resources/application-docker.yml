@@ -87,3 +87,28 @@ app:
     base-url: ${BASE_URL:https://dentist.mizhifei.press}
   email:
     from-email: ${MAIL_USERNAME}
+  security:
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: notification-service
+      audience: notification-service
+      trusted-keys:
+        auth:
+          key-id: ${SERVICE_AUTH_KEY_ID_AUTH:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:}
+          subject: auth-service
+          scopes:
+            - notification:email
+        appointment:
+          key-id: ${SERVICE_AUTH_KEY_ID_APPOINTMENT:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT:}
+          subject: appointment-service
+          scopes:
+            - notification:send
+        clinicalrecords:
+          key-id: ${SERVICE_AUTH_KEY_ID_CLINICALRECORDS:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS:}
+          subject: clinical-records-service
+          scopes:
+            - notification:send

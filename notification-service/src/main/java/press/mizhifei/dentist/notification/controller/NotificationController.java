@@ -40,7 +40,7 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @PostMapping("/send")
-    @PreAuthorize("denyAll()")
+    @PreAuthorize("hasAuthority('SERVICE_NOTIFICATION_SEND')")
     public Mono<ResponseEntity<ApiResponse<NotificationResponse>>> sendNotification(
             @Valid @RequestBody NotificationRequest request) {
         return Mono.fromCallable(() -> {

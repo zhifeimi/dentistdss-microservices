@@ -55,6 +55,37 @@ spec:
         property: {{ . }}
     {{- end }}
 {{- end }}
+{{- $serviceAuthPath := .Values.externalSecrets.serviceAuthPath }}
+{{- range $issuer := list "auth" "appointment" "clinical-records" "notification" }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dentistdss-service-auth-{{ $issuer }}
+  labels:
+    {{- include "dentistdss.labels" $ | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: {{ $storeName }}
+  target:
+    name: dentistdss-service-auth-{{ $issuer }}
+    creationPolicy: Owner
+  data:
+    - secretKey: SERVICE_AUTH_PRIVATE_KEY
+      remoteRef:
+        key: {{ printf "%s/%s" $serviceAuthPath $issuer | quote }}
+        property: SERVICE_AUTH_PRIVATE_KEY
+    - secretKey: SERVICE_AUTH_PUBLIC_KEY
+      remoteRef:
+        key: {{ printf "%s/%s" $serviceAuthPath $issuer | quote }}
+        property: SERVICE_AUTH_PUBLIC_KEY
+    - secretKey: SERVICE_AUTH_KEY_ID
+      remoteRef:
+        key: {{ printf "%s/%s" $serviceAuthPath $issuer | quote }}
+        property: SERVICE_AUTH_KEY_ID
+{{- end }}
 {{ if index .Values.services "genai-service" "enabled" }}
 ---
 apiVersion: external-secrets.io/v1

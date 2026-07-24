@@ -7,6 +7,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.client.NotificationServiceClient;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.ChangePasswordRequest;
@@ -45,7 +46,8 @@ class AuthServicePasswordTest {
                 passwordEncoder,
                 mock(NotificationServiceClient.class),
                 mock(UserApprovalService.class),
-                authSessionService);
+                authSessionService,
+                mock(AuditEventPublisher.class));
 
         user = User.builder()
                 .id(42L)

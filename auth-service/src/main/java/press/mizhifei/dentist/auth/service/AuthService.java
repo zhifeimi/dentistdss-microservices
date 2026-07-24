@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.dto.ApiResponse;
 import press.mizhifei.dentist.auth.dto.ApprovalRequestResponse;
 import press.mizhifei.dentist.auth.dto.ChangePasswordRequest;
@@ -34,6 +35,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -59,6 +61,7 @@ public class AuthService {
     private final NotificationServiceClient notificationServiceClient;
     private final UserApprovalService userApprovalService;
     private final AuthSessionService authSessionService;
+    private final AuditEventPublisher auditEventPublisher;
 
     @Value("${app.email-verification.code-expiry-minutes}")
     private long codeExpiryMinutes;
@@ -104,6 +107,14 @@ public class AuthService {
                 .accountNonLocked(true)
                 .build();
         User savedUser = userRepository.save(user);
+
+        auditEventPublisher.publish(
+                "USER_REGISTERED",
+                "user:" + savedUser.getId(),
+                savedUser.getId(),
+                null,
+                Map.of("role", Role.PATIENT.name(),
+                        "provider", savedUser.getProvider().name()));
 
         // Send verification token email
         // emailService.sendVerificationEmail(
@@ -178,6 +189,14 @@ public class AuthService {
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             return ApiResponse.error("Unable to register staff");
         }
+
+        auditEventPublisher.publish(
+                "USER_REGISTERED",
+                "user:" + savedUser.getId(),
+                savedUser.getId(),
+                clinic.getId(),
+                Map.of("role", staffRole.name(),
+                        "provider", savedUser.getProvider().name()));
 
         notificationServiceClient.sendVerificationEmail(
                 new VerificationEmailRequest(savedUser.getEmail(), verificationCode, "code"));
@@ -259,6 +278,14 @@ public class AuthService {
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             return ApiResponse.error("Unable to register clinic administrator");
         }
+
+        auditEventPublisher.publish(
+                "USER_REGISTERED",
+                "user:" + clinicAdmin.getId(),
+                clinicAdmin.getId(),
+                clinic.getId(),
+                Map.of("role", Role.CLINIC_ADMIN.name(),
+                        "provider", clinicAdmin.getProvider().name()));
 
         notificationServiceClient.sendVerificationEmail(
                 new VerificationEmailRequest(clinicAdmin.getEmail(), verificationCode, "code"));

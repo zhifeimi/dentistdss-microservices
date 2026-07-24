@@ -21,6 +21,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import press.mizhifei.dentist.auth.audit.AuditEventPublisher;
 import press.mizhifei.dentist.auth.config.SecurityConfig;
 import press.mizhifei.dentist.auth.dto.AuthResponse;
 import press.mizhifei.dentist.auth.dto.SessionTokens;
@@ -195,7 +196,8 @@ class AuthCsrfSecurityIntegrationTest {
                     authService,
                     authSessionService,
                     authCookieService,
-                    securityStateService);
+                    securityStateService,
+                    mock(AuditEventPublisher.class));
         }
     }
 }

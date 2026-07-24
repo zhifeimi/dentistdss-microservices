@@ -36,6 +36,15 @@ public class AnonymousSessionFilter implements GlobalFilter, Ordered {
     private static final String SESSION_ID_HEADER = "X-Session-ID";
     private static final String ANONYMOUS_PROOF_HEADER = "X-Gateway-Anonymous-Proof";
     private static final String SERVICE_AUTH_HEADER = GenAIServiceTokenIssuer.HEADER_NAME;
+    /**
+     * Header carrying the shared inter-service credential defined by
+     * security-common's {@code ServiceTokenConstants#HEADER_NAME}. The literal
+     * is duplicated here on purpose: the gateway must not depend on
+     * security-common, and any caller-supplied value on this header is always
+     * forged — service credentials are only ever minted cluster-internally by
+     * the calling service, never through the gateway.
+     */
+    private static final String SERVICE_CREDENTIAL_HEADER = "X-Service-Authorization";
     private static final String USER_ID_HEADER = "X-User-ID";
     private static final String USER_EMAIL_HEADER = "X-User-Email";
     private static final String USER_ROLES_HEADER = "X-User-Roles";
@@ -44,6 +53,7 @@ public class AnonymousSessionFilter implements GlobalFilter, Ordered {
             SESSION_ID_HEADER,
             ANONYMOUS_PROOF_HEADER,
             SERVICE_AUTH_HEADER,
+            SERVICE_CREDENTIAL_HEADER,
             USER_ID_HEADER,
             USER_EMAIL_HEADER,
             USER_ROLES_HEADER,

@@ -76,3 +76,19 @@ springdoc:
 logging:
   level:
     press.mizhifei.dentist: DEBUG
+
+# Service credentials (machine-to-machine): user-profile-service only
+# verifies; it does not issue. The contact-read routes (GET /user/{id}/email,
+# GET /user/{id}/name) accept credentials scoped user:contact:read. Empty key
+# material keeps verification dormant locally and fail-closed at request time.
+app:
+  security:
+    service-auth:
+      audience: user-profile-service
+      trusted-keys:
+        notification:
+          key-id: ${SERVICE_AUTH_KEY_ID_NOTIFICATION:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_NOTIFICATION:}
+          subject: notification-service
+          scopes:
+            - user:contact:read
