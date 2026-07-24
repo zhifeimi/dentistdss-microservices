@@ -113,45 +113,40 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
-    // Inner class for UserDetailsResponse
-    public static class UserDetailsResponse {
-        public Long id;
-        public String email;
-        public String firstName;
-        public String lastName;
-        public String fullName;
-        public String phone;
-        public String address;
-        public java.util.Set<String> roles;
-        public Long clinicId;
-        public String clinicName;
-        public Boolean enabled;
+    /**
+     * Immutable user-details API DTO. Serialized by Jackson for the
+     * {@code /user/{id}/details} and {@code /user/email/{email}/details}
+     * endpoints; record components render the same JSON field names the
+     * PWA consumes. {@code roles} is defensively copied at construction.
+     */
+    public record UserDetailsResponse(
+            Long id,
+            String email,
+            String firstName,
+            String lastName,
+            String fullName,
+            String phone,
+            String address,
+            java.util.Set<String> roles,
+            Long clinicId,
+            String clinicName,
+            Boolean enabled) {
 
         public UserDetailsResponse(Long id, String email, String firstName, String lastName,
                 String phone, String address) {
-            this.id = id;
-            this.email = email;
-            this.firstName = firstName;
-            this.lastName = lastName;
-            this.fullName = firstName + " " + lastName;
-            this.phone = phone;
-            this.address = address;
+            this(id, email, firstName, lastName, firstName + " " + lastName,
+                    phone, address, null, null, null, null);
         }
 
         public UserDetailsResponse(Long id, String email, String firstName, String lastName,
                 String phone, String address, java.util.Set<String> roles, Long clinicId,
                 String clinicName, Boolean enabled) {
-            this.id = id;
-            this.email = email;
-            this.firstName = firstName;
-            this.lastName = lastName;
-            this.fullName = firstName + " " + lastName;
-            this.phone = phone;
-            this.address = address;
-            this.roles = roles;
-            this.clinicId = clinicId;
-            this.clinicName = clinicName;
-            this.enabled = enabled;
+            this(id, email, firstName, lastName, firstName + " " + lastName,
+                    phone, address, roles, clinicId, clinicName, enabled);
+        }
+
+        public UserDetailsResponse {
+            roles = roles == null ? null : java.util.Set.copyOf(roles);
         }
     }
 }

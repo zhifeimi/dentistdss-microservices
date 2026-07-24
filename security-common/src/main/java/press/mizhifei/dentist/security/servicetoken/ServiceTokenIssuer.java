@@ -15,6 +15,7 @@ import org.springframework.security.oauth2.jwt.JwtEncodingException;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.util.StringUtils;
 
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPrivateKey;
@@ -113,7 +114,7 @@ public final class ServiceTokenIssuer {
                     .build();
             return new NimbusJwtEncoder(new ImmutableJWKSet<SecurityContext>(
                     new JWKSet(rsaKey)));
-        } catch (Exception error) {
+        } catch (GeneralSecurityException | RuntimeException error) {
             return null;
         }
     }

@@ -21,6 +21,7 @@ import reactor.core.publisher.Mono;
 
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
@@ -120,7 +121,7 @@ public final class GenAIServiceTokenIssuer {
                     .build();
             return new NimbusJwtEncoder(new ImmutableJWKSet<SecurityContext>(
                     new JWKSet(rsaKey)));
-        } catch (Exception error) {
+        } catch (GeneralSecurityException | RuntimeException error) {
             return null;
         }
     }

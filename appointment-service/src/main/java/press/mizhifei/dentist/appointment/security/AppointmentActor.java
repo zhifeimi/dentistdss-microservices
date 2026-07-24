@@ -8,6 +8,10 @@ import java.util.Set;
 
 public record AppointmentActor(long userId, Set<String> roles, Long clinicId) {
 
+    public AppointmentActor {
+        roles = Set.copyOf(roles);
+    }
+
     public static AppointmentActor from(Jwt jwt) {
         AuthenticatedUser user = AuthenticatedUser.from(jwt);
         return new AppointmentActor(

@@ -1,0 +1,116 @@
+# Scheduled ZAP baseline DAST for task #13 / traceability finding SUPPLY-01.
+#
+# NOT a PR gate. Cron fires only on the default branch, so on review branches
+# this workflow is verified via workflow_dispatch. Boots the core stack from
+# deploy/compose.yml with a throwaway RSA keypair (genai stays down: its
+# compose profile is not activated), scans the gateway's public surface only,
+# and fails on any High-risk alert. Real High findings are fixed in code,
+# never masked in zap-rules.tsv.
+name: DAST
+
+on:
+  schedule:
+    - cron: '10 19 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  zap-baseline:
+    name: ZAP baseline scan (gateway)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Generate throwaway JWT keypair
+        run: |
+          set -euo pipefail
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+            -outform DER -out /tmp/dast-private.der
+          openssl pkey -inform DER -in /tmp/dast-private.der \
+            -pubout -outform DER -out /tmp/dast-public.der
+          {
+            echo "JWT_RSA_PRIVATE_KEY=$(base64 -w0 /tmp/dast-private.der)"
+            echo "JWT_RSA_PUBLIC_KEY=$(base64 -w0 /tmp/dast-public.der)"
+          } > /tmp/dast-overrides.env
+          rm -f /tmp/dast-private.der /tmp/dast-public.der
+
+      - name: Boot core stack
+        run: |
+          set -euo pipefail
+          # The later --env-file wins, so the throwaway keys override the
+          # example values. COMPOSE_PROFILES stays empty: the ai profile
+          # (genai-service) is intentionally not started.
+          docker compose \
+            --env-file deploy/.env.example \
+            --env-file /tmp/dast-overrides.env \
+            --file deploy/compose.yml \
+            up -d --wait --wait-timeout 480
+
+      - name: Wait for gateway health
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/actuator/health 2>/dev/null | grep -q '"UP"'; then
+              echo "Gateway is healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Gateway did not become healthy within 300s"
+          docker compose --env-file deploy/.env.example --env-file /tmp/dast-overrides.env --file deploy/compose.yml ps || true
+          exit 1
+
+      - name: Run ZAP baseline scan
+        run: |
+          set -euo pipefail
+          ZAP_IMAGE="ghcr.io/zaproxy/zaproxy:stable@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2"
+          if docker run --rm --entrypoint sh "${ZAP_IMAGE}" -c 'command -v zap-baseline.py >/dev/null 2>&1'; then
+            SCAN="zap-baseline.py"
+          else
+            SCAN="zap.sh -cmd"
+          fi
+          docker run --rm --network host -v "${PWD}/dast:/zap/wrk:rw" "${ZAP_IMAGE}" \
+            ${SCAN} -t http://localhost:8080 -c /zap/wrk/zap-rules.tsv -J report.json -r report.md -I || true
+
+      - name: Fail on any High-risk alert
+        run: |
+          set -euo pipefail
+          if [ ! -f dast/report.json ]; then
+            echo "::error::ZAP did not produce a report"
+            exit 1
+          fi
+          HIGH_COUNT="$(jq '[.site[].alerts[] | select(.risk == "High")] | length' dast/report.json)"
+          if [ "${HIGH_COUNT}" -ne 0 ]; then
+            echo "::error::ZAP baseline found ${HIGH_COUNT} High-risk alert(s):"
+            jq -r '.site[].alerts[] | select(.risk == "High") | "  - \(.alert) [\(.ruleId)] at \(.instances[0].uri // "n/a")"' dast/report.json
+            exit 1
+          fi
+          echo "No High-risk alerts"
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zap-baseline-report
+          path: |
+            dast/report.json
+            dast/report.md
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Tear down stack
+        if: always()
+        run: |
+          docker compose \
+            --env-file deploy/.env.example \
+            --env-file /tmp/dast-overrides.env \
+            --file deploy/compose.yml \
+            down -v --remove-orphans || true

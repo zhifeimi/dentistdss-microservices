@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Mono;
 
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.X509EncodedKeySpec;
@@ -73,7 +74,7 @@ public final class GenAIServiceJwtDecoder implements ReactiveJwtDecoder {
                     timestampValidator,
                     serviceClaimsValidator(expectedKeyId)));
             return decoder;
-        } catch (Exception error) {
+        } catch (GeneralSecurityException | IllegalArgumentException error) {
             return null;
         }
     }

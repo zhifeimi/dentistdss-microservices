@@ -154,9 +154,9 @@ public class ChatService {
 
         if (history != null) {
             for (Conversation.Message msg : history) {
-                if ("user".equalsIgnoreCase(msg.getRole())) {
+                if ("user".equals(msg.getRole())) {
                     messages.add(new UserMessage(msg.getContent()));
-                } else if ("assistant".equalsIgnoreCase(msg.getRole())) {
+                } else if ("assistant".equals(msg.getRole())) {
                     messages.add(new AssistantMessage(msg.getContent()));
                 }
             }
@@ -174,9 +174,9 @@ public class ChatService {
 
         if (history != null) {
             for (Conversation.Message msg : history) {
-                if ("user".equalsIgnoreCase(msg.getRole())) {
+                if ("user".equals(msg.getRole())) {
                     messages.add(new UserMessage(msg.getContent()));
-                } else if ("assistant".equalsIgnoreCase(msg.getRole())) {
+                } else if ("assistant".equals(msg.getRole())) {
                     messages.add(new AssistantMessage(msg.getContent()));
                 }
             }

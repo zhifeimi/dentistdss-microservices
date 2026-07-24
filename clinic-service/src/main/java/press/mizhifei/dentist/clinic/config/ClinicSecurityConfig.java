@@ -24,7 +24,7 @@ public class ClinicSecurityConfig {
             HttpSecurity http,
             ServletJwtResourceServerCustomizer resourceServerCustomizer,
             @Value("${springdoc.api-docs.enabled:false}")
-            boolean springdocEnabled) throws Exception {
+            boolean springdocEnabled) {
         http.csrf(csrf -> csrf.ignoringRequestMatchers("/clinic/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(

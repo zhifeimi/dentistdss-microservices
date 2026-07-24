@@ -1,5 +1,6 @@
 package press.mizhifei.dentist.auth.security;
 
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -16,6 +17,7 @@ import org.springframework.util.StringUtils;
 
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.text.ParseException;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -44,7 +46,9 @@ public class JwtTokenProvider {
             throw new IllegalArgumentException("Session family ID is required");
         }
 
-        UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+        if (!(authentication.getPrincipal() instanceof UserPrincipal userPrincipal)) {
+            throw new IllegalArgumentException("Authenticated principal is not a user principal");
+        }
         if (userPrincipal.getId() == null
                 || userPrincipal.getId() <= 0
                 || userPrincipal.getSecurityVersion() <= 0) {
@@ -158,7 +162,7 @@ public class JwtTokenProvider {
             positiveLong(claims.getSubject(), "subject");
             positiveLongClaim(claims, "securityVersion");
             return claims;
-        } catch (Exception ex) {
+        } catch (ParseException | JOSEException | RuntimeException ex) {
             throw new IllegalArgumentException("Invalid access token", ex);
         }
     }

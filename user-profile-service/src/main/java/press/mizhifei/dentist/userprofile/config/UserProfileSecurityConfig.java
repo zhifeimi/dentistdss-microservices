@@ -42,7 +42,7 @@ public class UserProfileSecurityConfig {
             ServiceAuthProperties serviceAuthProperties,
             ServletBearerTokenFailureHandler bearerTokenFailureHandler,
             @Value("${springdoc.api-docs.enabled:false}")
-            boolean springdocEnabled) throws Exception {
+            boolean springdocEnabled) {
         http.csrf(csrf -> csrf.ignoringRequestMatchers(
                         "/user/**", "/patient/**", "/dentist/**"))
                 .cors(Customizer.withDefaults())

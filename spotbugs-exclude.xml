@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs/FindSecBugs exclusion filter for the `security` Maven profile.
+
+  Policy: justified suppressions only. Every <Match> entry must carry a
+  rationale comment explaining why the finding is a false positive or an
+  accepted risk in this codebase. Real findings are fixed in code, never
+  silenced here. Entries without a rationale are removed in review.
+-->
+<FindBugsFilter>
+
+    <!-- CRLF_INJECTION_LOGS (pattern-level, documented deviation): the
+         servlet (Tomcat) and reactive (Netty) containers structurally reject
+         raw CR/LF in the request line and header values, so path-, method-,
+         and header-derived log arguments cannot carry line breaks. Body-
+         derived values (e.g. an approval note) can contain newlines; impact
+         is confined to line-wrapping in operational stdout logs consumed by
+         the cluster log pipeline. No authentication, authorization, or audit
+         decision is derived from application logs: audit evidence flows
+         through the transactional outbox to audit-service with a content
+         hash, not through log lines. Per-class entries would number in the
+         hundreds across 15 modules for the same architectural reason, so
+         the pattern is suppressed here with the rationale stated once. -->
+    <Match>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
+
+    <!-- CT_CONSTRUCTOR_THROW: Spring-managed singletons whose constructors
+         fail fast on invalid configuration. None overrides finalize(),
+         finalization is disabled by default on modern JVMs, and an attacker
+         cannot subclass or instantiate container-managed components in
+         process; the "partially constructed object" finalizer attack does
+         not apply. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.gateway.service.TrustedProxyClientAddressResolver"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.gateway.service.AnonymousSessionIssuanceLimiter"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.gateway.service.AnonymousSessionProofService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.gateway.service.AnonymousSessionService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.security.JwtKeyProvider"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
+    <!-- EI_EXPOSE_REP2: the stored references are container-managed Spring
+         singletons injected by the application context; there is no external
+         caller-controlled mutability, and defensive copies of DI references
+         would be incorrect. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.gateway.service.AnonymousSessionIssuanceLimiter"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.gateway.service.AnonymousSessionProofService"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.gateway.service.AnonymousSessionService"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- EI_EXPOSE_REP / EI_EXPOSE_REP2: @ConfigurationProperties binding
+         requires mutable list accessors; the bound values come from trusted
+         application configuration (operator-controlled YAML), not caller
+         input, and the bean is a context-managed singleton. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.security.servicetoken.ServiceAuthProperties"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.security.servicetoken.ServiceAuthProperties"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.security.servicetoken.ServiceAuthProperties$TrustedKeyEntry"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.security.servicetoken.ServiceAuthProperties$TrustedKeyEntry"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- EI_EXPOSE_REP / EI_EXPOSE_REP2: per-request DTO transport record;
+         the wrapped AuthResponse is built per request and consumed within
+         the same call chain, never shared across trust boundaries, so the
+         accessor's reference return is not an aliasing hazard. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.dto.SessionTokens"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.dto.SessionTokens"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- SERVLET_HEADER: reading the Authorization header is the bearer-token
+         mechanism itself; the extracted token is cryptographically verified
+         (signature, issuer/audience/expiry, security-state check) before any
+         identity claim is used. Alterability is why it is verified, not
+         trusted. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.security.servicetoken.ServiceTokenAuthenticationFilter"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.util.HttpUtil"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.security.JwtAuthenticationFilter"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.aspect.RoleAuthorizationAspect"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+
+    <!-- SERVLET_HEADER: Feign request interceptors that forward the caller's
+         already-verified Authorization bearer to downstream domain services
+         (the documented identity-propagation contract). The forwarded header
+         is never trusted as-is: every receiving service cryptographically
+         re-verifies the JWT through its security-common filter chain before
+         any identity claim is used. Alterability is why it is re-verified on
+         receipt, not trusted in transit. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.clinic.client.UserProfileServiceFeignConfiguration"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.clinic.client.AppointmentServiceFeignConfiguration"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.appointment.client.UserProfileServiceFeignConfiguration"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.appointment.client.ClinicServiceFeignConfiguration"/>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+
+    <!-- XSS_SERVLET: writeJsonError only ever writes compile-time constant
+         messages ("Invalid bearer token", "Authentication state unavailable")
+         with Content-Type application/json; no request-derived data reaches
+         the response body. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.security.JwtAuthenticationFilter"/>
+        <Bug pattern="XSS_SERVLET"/>
+    </Match>
+
+    <!-- COOKIE_USAGE: the refresh-token cookie is the intentional session
+         credential transport (HttpOnly, Secure, SameSite), with server-side
+         rotation and revocation; reading it back on /auth/refresh is the
+         designed flow, not incidental sensitive data in a cookie. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.service.AuthCookieService"/>
+        <Bug pattern="COOKIE_USAGE"/>
+    </Match>
+
+    <!-- SPRING_ENDPOINT (pattern-level, documented deviation): this detector
+         merely identifies classes carrying request mappings — i.e. that the
+         REST controllers and Feign client interfaces of a web service are
+         endpoints. It reports no exploitable state. Every HTTP endpoint in
+         this codebase sits behind a fail-closed SecurityFilterChain
+         (authenticated() by default, explicit reviewed permitAll lists),
+         and Feign client interfaces are proxied, never registered as handler
+         mappings. Suppressing per controller across 15 modules would be
+         pure noise; the rationale is stated once here. -->
+    <Match>
+        <Bug pattern="SPRING_ENDPOINT"/>
+    </Match>
+
+    <!-- UPM_UNCALLED_PRIVATE_METHOD: trimFields() is a JPA lifecycle callback
+         annotated @PrePersist/@PreUpdate; it is invoked reflectively by the
+         persistence provider (Hibernate) at flush time, never from Java code,
+         so the "never called" detection is a false positive. It enforces
+         whitespace trimming and createdAt/updatedAt stamping on Clinic
+         entities. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.clinic.model.Clinic"/>
+        <Bug pattern="UPM_UNCALLED_PRIVATE_METHOD"/>
+    </Match>
+
+    <!-- NM_CONFUSING: getUserName() on the ApprovalRequestResponse DTO and
+         getUsername() on UserPrincipal belong to unrelated classes; the
+         DTO's userName field is a fixed JSON contract consumed by the PWA,
+         and there is no realistic call-site ambiguity between the two. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.auth.dto.ApprovalRequestResponse"/>
+        <Bug pattern="NM_CONFUSING"/>
+    </Match>
+
+    <!-- CT_CONSTRUCTOR_THROW (genai-service): same fail-fast configuration
+         validation pattern as the gateway/auth entries above — Spring-managed
+         singletons validating @Value limits at construction; an invalid value
+         aborts context startup and no partially constructed bean escapes. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.AnonymousSessionRegistry"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.ConversationPersistenceService"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.GenAIPromptValidator"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.TokenRateLimiter"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
+    <!-- EI_EXPOSE_REP2 (genai-service): same Spring singleton DI rationale as
+         the gateway entries above — ReactiveStringRedisTemplate and
+         ReactiveMongoTemplate are context-managed singletons; copying them
+         would be incorrect. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.AnonymousSessionRegistry"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.ConversationPersistenceService"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.TokenRateLimiter"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- EI_EXPOSE_REP / EI_EXPOSE_REP2: OpenConversation.conversation is a
+         per-request working document for the reactive findAndModify append
+         pipeline (the record exists precisely to carry that identity through
+         the turn); the history list is made immutable in the compact
+         constructor, and the record never leaves the service's request
+         chain, so accessor aliasing is not a trust-boundary hazard. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.ConversationPersistenceService$OpenConversation"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.ConversationPersistenceService$OpenConversation"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- IMPROPER_UNICODE: capitalizeFirstLetter produces a cosmetic display
+         name from the email local part (getDisplayName fallback). The result
+         is used only for user-facing greetings/labels; no authentication,
+         authorization, identifier matching, or audit decision is derived from
+         it. The conversion is pinned to Locale.ROOT (DM_CONVERT_CASE-clean);
+         the detector's Unicode-ambiguity concern applies to security-critical
+         string comparisons, not display capitalization. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.genai.service.UserContextService"/>
+        <Method name="capitalizeFirstLetter"/>
+        <Bug pattern="IMPROPER_UNICODE"/>
+    </Match>
+
+    <!-- VA_FORMAT_STRING_USES_NEWLINE (notification-service): the format
+         strings compose plain-text email bodies, whose line breaks are fixed
+         by the mail protocol, not by the host platform. %n would render the
+         JVM's platform line separator into network-facing content; the literal
+         \n is the deliberate, correct choice here, so the detector's advice is
+         inverted for this context. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.notification.service.EmailService"/>
+        <Method name="sendAVerificationEmail"/>
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/>
+    </Match>
+    <Match>
+        <Class name="press.mizhifei.dentist.notification.service.EmailService"/>
+        <Method name="sendAProveRequestEmail"/>
+        <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/>
+    </Match>
+
+    <!-- IMPROPER_UNICODE: Role.fromString normalizes a role-name string to an
+         enum constant with toUpperCase(Locale.ROOT). The Locale.ROOT pin is
+         exactly the defense against the locale-dependent case-mapping
+         ambiguity this detector warns about (e.g. Turkish dotted/dotless I);
+         any string that does not case-fold to a constant fails closed in
+         Enum.valueOf with IllegalArgumentException. No ambiguous mapping
+         survives the conversion. -->
+    <Match>
+        <Class name="press.mizhifei.dentist.userprofile.model.Role"/>
+        <Method name="fromString"/>
+        <Bug pattern="IMPROPER_UNICODE"/>
+    </Match>
+
+</FindBugsFilter>

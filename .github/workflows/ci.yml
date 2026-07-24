@@ -54,7 +54,7 @@ jobs:
   deployment-contract:
     name: Validate deployment contract
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -97,6 +97,9 @@ jobs:
               END { validate_document() }
             ' "$manifest"
           done
+
+      - name: Verify manifest security policy
+        run: bash deploy/scripts/verify-manifest-policy.sh /tmp/dentistdss-dev.yaml /tmp/dentistdss-prod.yaml
 
       - name: Validate deployment scripts
         run: bash -n deploy/scripts/*.sh

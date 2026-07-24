@@ -23,6 +23,7 @@ import press.mizhifei.dentist.clinicalrecords.security.ClinicalRecordsActor;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -316,11 +317,11 @@ public class TreatmentPlanService {
             Map<String, Object> notification = new HashMap<>();
             notification.put("userId", plan.getPatientId());
             notification.put("type", "IN_APP");
-            notification.put("subject", "Treatment plan " + action.toLowerCase());
-            notification.put("body", "Your treatment plan has been " + action.toLowerCase());
+            notification.put("subject", "Treatment plan " + action.toLowerCase(Locale.ROOT));
+            notification.put("body", "Your treatment plan has been " + action.toLowerCase(Locale.ROOT));
             notification.put("metadata", Map.of("treatment_plan_id", plan.getId()));
             notificationClient.sendNotification(notification);
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             log.warn("Treatment-plan notification delivery failed");
         }
     }

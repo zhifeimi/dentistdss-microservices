@@ -213,7 +213,7 @@ public class ClinicService {
             return dentists;
         } catch (Exception e) {
             log.error("Failed to fetch dentists for clinic {}: {}", clinicId, e.getMessage());
-            throw new RuntimeException("Failed to fetch dentists for clinic", e);
+            throw new IllegalStateException("Failed to fetch dentists for clinic", e);
         }
     }
 

@@ -31,8 +31,8 @@ public class PromptTemplateInitializationService implements ApplicationRunner {
         log.info("Initializing default prompt templates...");
         
         // Check if templates already exist
-        long existingCount = promptTemplateRepository.count().block();
-        if (existingCount > 0) {
+        Long existingCount = promptTemplateRepository.count().block();
+        if (existingCount != null && existingCount > 0) {
             log.info("Prompt templates already exist ({}), skipping initialization", existingCount);
             return;
         }

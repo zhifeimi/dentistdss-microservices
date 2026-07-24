@@ -36,7 +36,7 @@ public class SecurityConfig {
     private boolean springdocEnabled;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         http.cors(Customizer.withDefaults())
                 .csrf(csrf -> {
                     csrf.csrfTokenRepository(authCookieService.csrfTokenRepository());
@@ -92,9 +92,12 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
-            throws Exception {
-        return authenticationConfiguration.getAuthenticationManager();
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) {
+        try {
+            return authenticationConfiguration.getAuthenticationManager();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to build authentication manager", ex);
+        }
     }
 
     @Bean

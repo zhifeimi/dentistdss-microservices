@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -152,7 +153,8 @@ public class UserContextService {
         if (!StringUtils.hasText(value)) {
             return value;
         }
-        return value.substring(0, 1).toUpperCase() + value.substring(1).toLowerCase();
+        return value.substring(0, 1).toUpperCase(Locale.ROOT)
+                + value.substring(1).toLowerCase(Locale.ROOT);
     }
 
     @lombok.Data

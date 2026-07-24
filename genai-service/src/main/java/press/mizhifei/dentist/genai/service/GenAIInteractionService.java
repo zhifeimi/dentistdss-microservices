@@ -241,7 +241,9 @@ public class GenAIInteractionService {
     }
 
     private String determineInteractionType(String agent) {
-        return switch (agent.toLowerCase()) {
+        // Exact match on the gateway route's lowercase agent path segment;
+        // case variants classify as GENERAL_CHAT. No case conversion here.
+        return switch (agent) {
             case "triage" -> "TRIAGE";
             case "help" -> "FAQ";
             case "receptionist" -> "RECEPTIONIST_CHAT";

@@ -237,5 +237,9 @@ public class ConversationPersistenceService {
             Conversation conversation,
             List<Conversation.Message> history,
             String turnId) {
+
+        public OpenConversation {
+            history = List.copyOf(history);
+        }
     }
 }

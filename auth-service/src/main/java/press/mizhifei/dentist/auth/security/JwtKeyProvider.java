@@ -70,7 +70,7 @@ public class JwtKeyProvider {
             keyPairGenerator.initialize(2048);
             return keyPairGenerator.generateKeyPair();
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Failed to generate RSA key pair", e);
+            throw new IllegalStateException("Failed to generate RSA key pair", e);
         }
     }
 
@@ -85,8 +85,8 @@ public class JwtKeyProvider {
             PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(keyBytes);
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
             return keyFactory.generatePrivate(keySpec);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to parse private key", e);
+        } catch (GeneralSecurityException | RuntimeException e) {
+            throw new IllegalStateException("Failed to parse private key", e);
         }
     }
 
@@ -101,8 +101,8 @@ public class JwtKeyProvider {
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
             KeyFactory keyFactory = KeyFactory.getInstance("RSA");
             return keyFactory.generatePublic(keySpec);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to parse public key", e);
+        } catch (GeneralSecurityException | RuntimeException e) {
+            throw new IllegalStateException("Failed to parse public key", e);
         }
     }
 }

@@ -20,7 +20,7 @@ public class ClinicalRecordsSecurityConfig {
     SecurityFilterChain clinicalRecordsSecurityFilterChain(
             HttpSecurity http,
             ServletJwtResourceServerCustomizer resourceServerCustomizer,
-            @Value("${springdoc.api-docs.enabled:false}") boolean springdocEnabled) throws Exception {
+            @Value("${springdoc.api-docs.enabled:false}") boolean springdocEnabled) {
         http.csrf(csrf -> csrf.ignoringRequestMatchers("/clinical-records/**"))
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(

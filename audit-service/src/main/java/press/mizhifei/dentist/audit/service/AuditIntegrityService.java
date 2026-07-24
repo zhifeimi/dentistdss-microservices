@@ -8,6 +8,8 @@ import press.mizhifei.dentist.audit.model.AuditSeal;
 import press.mizhifei.dentist.audit.repository.AuditEntryRepository;
 import press.mizhifei.dentist.audit.repository.AuditSealRepository;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 
 /**
@@ -70,11 +72,11 @@ public class AuditIntegrityService {
                 return issue("RANGE_OVERLAP", seal, documentsChecked,
                         "firstId " + seal.getFirstId() + " does not continue after " + previousLastId);
             }
-            if (!expectedPreviousHash.equals(seal.getPreviousSealHash())) {
+            if (!hashEquals(expectedPreviousHash, seal.getPreviousSealHash())) {
                 return issue("CHAIN_BROKEN", seal, documentsChecked,
                         "previousSealHash does not match the preceding seal's hash");
             }
-            if (!AuditSealingService.computeSealHash(seal).equals(seal.getSealHash())) {
+            if (!hashEquals(AuditSealingService.computeSealHash(seal), seal.getSealHash())) {
                 return issue("SEAL_HASH_MISMATCH", seal, documentsChecked,
                         "stored sealHash does not match the recomputed seal hash");
             }
@@ -93,13 +95,13 @@ public class AuditIntegrityService {
                     return issue("DOCUMENT_HASH_MISSING", seal, documentsChecked,
                             "document " + doc.getId() + " inside a sealed range has no contentHash");
                 }
-                if (!contentHasher.hash(doc).equals(doc.getContentHash())) {
+                if (!hashEquals(contentHasher.hash(doc), doc.getContentHash())) {
                     return issue("DOCUMENT_MODIFIED", seal, documentsChecked,
                             "document " + doc.getId() + " no longer matches its contentHash");
                 }
                 documentsChecked++;
             }
-            if (!AuditSealingService.computeBatchRoot(docs).equals(seal.getBatchRoot())) {
+            if (!hashEquals(AuditSealingService.computeBatchRoot(docs), seal.getBatchRoot())) {
                 return issue("BATCH_ROOT_MISMATCH", seal, documentsChecked,
                         "stored content hashes no longer reproduce the seal's batchRoot");
             }
@@ -116,6 +118,27 @@ public class AuditIntegrityService {
                 .documentsChecked(documentsChecked)
                 .unsealedDocuments(unsealed)
                 .build();
+    }
+
+    /**
+     * Constant-time comparison of two hex-encoded hash values (FindSecBugs
+     * UNSAFE_HASH_EQUALS). Verification is detection, not an authentication
+     * oracle — the compared values are recomputed from stored data, not
+     * attacker-submitted — so the practical timing-channel exposure is
+     * minimal; the constant-time comparison is defense in depth and keeps
+     * every hash check in this verifier uniform. Null semantics match the
+     * previous {@code String.equals} behavior: a null stored hash mismatches
+     * any recomputed value. Hex encodings in this module are consistently
+     * lowercase, so byte-wise comparison of the encodings is equivalent to
+     * hash equality.
+     */
+    private static boolean hashEquals(String expected, String actual) {
+        if (expected == null || actual == null) {
+            return expected == null && actual == null;
+        }
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                actual.getBytes(StandardCharsets.UTF_8));
     }
 
     private long countUnsealed(String afterId) {

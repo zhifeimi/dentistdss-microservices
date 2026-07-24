@@ -1,0 +1,11 @@
+# Trivy ignore list for DentistDSS.
+#
+# Format: one finding per line —
+#   <ID> <component>   # <rationale> — review-by <YYYY-MM-DD>
+#
+# Policy: entries are added only for findings triaged during CI gate
+# iteration, each with a rationale and a review-by date. Blank lines and
+# lines starting with # are ignored. Never bulk-ignore: every entry must be
+# individually justified (unfixed upstream with no exploitable path in this
+# stack, or a verified false positive). Real findings are fixed by bumping
+# the dependency or changing code.

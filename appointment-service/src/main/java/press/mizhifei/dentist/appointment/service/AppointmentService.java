@@ -34,6 +34,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -701,7 +702,7 @@ public class AppointmentService {
         if (actor.userId() != patientId) {
             throw new AppointmentNotFoundException();
         }
-        if (actor.clinicId() != null && actor.clinicId() != clinicId) {
+        if (actor.clinicId() != null && !actor.clinicId().equals(clinicId)) {
             throw new AppointmentNotFoundException();
         }
     }
@@ -768,13 +769,13 @@ public class AppointmentService {
         try {
             response.setPatientName(userProfileServiceClient.getUserFullName(
                     appointment.getPatientId()));
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             response.setPatientName("Patient " + appointment.getPatientId());
         }
         try {
             response.setDentistName(userProfileServiceClient.getUserFullName(
                     appointment.getDentistId()));
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             response.setDentistName("Dr. Dentist " + appointment.getDentistId());
         }
         try {
@@ -785,7 +786,7 @@ public class AppointmentService {
                     && clinicResponse.getDataObject() != null) {
                 response.setClinicName(clinicResponse.getDataObject().getName());
             }
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             response.setClinicName("Clinic " + appointment.getClinicId());
         }
         if (appointment.getServiceId() != null) {
@@ -798,7 +799,7 @@ public class AppointmentService {
                     response.setServiceName(
                             serviceResponse.getDataObject().getName());
                 }
-            } catch (Exception exception) {
+            } catch (RuntimeException exception) {
                 response.setServiceName("Service " + appointment.getServiceId());
             }
         }
@@ -809,7 +810,7 @@ public class AppointmentService {
             return UrgencyLevel.ROUTINE;
         }
         try {
-            return UrgencyLevel.valueOf(level.toUpperCase());
+            return UrgencyLevel.valueOf(level.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new InvalidAppointmentRequestException(
                     "Urgency level is invalid");
@@ -847,14 +848,18 @@ public class AppointmentService {
         String patientName = "Patient";
         try {
             patientName = userProfileServiceClient.getUserFullName(appointment.getPatientId());
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             // Best-effort enrichment; fall back to a generic salutation.
+            log.debug("Patient name lookup failed for appointment {}: {}",
+                    appointment.getId(), exception.getMessage());
         }
         String dentistName = "Dr. Dentist";
         try {
             dentistName = userProfileServiceClient.getUserFullName(appointment.getDentistId());
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             // Best-effort enrichment; fall back to a generic salutation.
+            log.debug("Dentist name lookup failed for appointment {}: {}",
+                    appointment.getId(), exception.getMessage());
         }
         Map<String, Object> notificationRequest = new HashMap<>();
         notificationRequest.put("userId", appointment.getPatientId());

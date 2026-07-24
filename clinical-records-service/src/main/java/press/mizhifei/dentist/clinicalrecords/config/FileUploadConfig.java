@@ -27,8 +27,10 @@ public class FileUploadConfig {
     public void setMaxFileSize(long maxFileSize) { this.maxFileSize = maxFileSize; }
     public long getMaxRequestSize() { return maxRequestSize; }
     public void setMaxRequestSize(long maxRequestSize) { this.maxRequestSize = maxRequestSize; }
-    public String[] getAllowedImageTypes() { return allowedImageTypes; }
-    public void setAllowedImageTypes(String[] allowedImageTypes) { this.allowedImageTypes = allowedImageTypes; }
+    public String[] getAllowedImageTypes() { return allowedImageTypes.clone(); }
+    public void setAllowedImageTypes(String[] allowedImageTypes) {
+        this.allowedImageTypes = allowedImageTypes == null ? new String[0] : allowedImageTypes.clone();
+    }
     public int getThumbnailWidth() { return thumbnailWidth; }
     public void setThumbnailWidth(int thumbnailWidth) { this.thumbnailWidth = thumbnailWidth; }
     public int getThumbnailHeight() { return thumbnailHeight; }

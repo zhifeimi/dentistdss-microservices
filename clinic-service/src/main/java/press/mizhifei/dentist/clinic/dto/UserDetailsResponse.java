@@ -19,15 +19,15 @@ import java.util.Set;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UserDetailsResponse {
-    public Long id;
-    public String email;
-    public String firstName;
-    public String lastName;
-    public String fullName;
-    public String phone;
-    public String address;
-    public Set<String> roles;
-    public Long clinicId;
-    public String clinicName;
-    public Boolean enabled;
+    private Long id;
+    private String email;
+    private String firstName;
+    private String lastName;
+    private String fullName;
+    private String phone;
+    private String address;
+    private Set<String> roles;
+    private Long clinicId;
+    private String clinicName;
+    private Boolean enabled;
 }

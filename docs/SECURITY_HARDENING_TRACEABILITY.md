@@ -21,7 +21,7 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 | RATE-01 | Session and GenAI limiter maps are bypassable/unbounded | Redis-backed signed sessions, quotas, TTLs, and cardinality limits | Rotation, restart, and multi-replica tests pass without key leaks | In progress |
 | ERROR-01 | Exception details leak to clients/logs | Shared safe error envelope and redaction | Responses contain no stack/SQL/SMTP/provider/token/PHI detail | In progress |
 | CORS-01 | CORS and cookie behavior are broader than required | Exact origins/methods/headers, Origin validation, anti-CSRF for cookie endpoints | Hostile Origin and missing/invalid CSRF requests fail | In progress |
-| SUPPLY-01 | Build inputs and vulnerabilities are not fully gated | Java 25, Enforcer, FindSecBugs, Dependency-Check, SBOM, Trivy, pinned actions/images | CI blocks policy violations and high/critical findings | In progress |
+| SUPPLY-01 | Build inputs and vulnerabilities are not fully gated | Java 25, Enforcer, FindSecBugs, Dependency-Check, SBOM, Trivy, pinned actions/images | CI blocks policy violations and high/critical findings | Done (see notes) |
 
 ## Finding notes
 
@@ -88,6 +88,83 @@ baseline-on-migrate adoption path was live-verified against PostgreSQL
 (both fresh-database apply and existing-database baseline). Completion
 awaits PR #22 CI confirmation that all seven `*SchemaContractTest` suites
 run green.
+
+### SUPPLY-01 — done: CI security gates, manifest policy, DAST, digest pins
+
+Supply-chain gating landed on `agent/security-platform-hardening` (PR #22);
+the "Done" status becomes effective once PR #22's new `Security/*` checks and
+the extended `deployment-contract` job are green. The local contract is
+already proven: `./mvnw -Pprod,security -DskipTests -Ddependency-check.skip=true
+verify` is green across all 16 reactor modules, and the manifest-policy gate
+passes both environment renders and fails exactly 12 ways under a mutation
+battery (one deliberate break per assertion family).
+
+- Enforcer banned dependencies (always active, `searchTransitive=true`):
+  `log4j:log4j` outright; `org.apache.logging.log4j:log4j-core:[,2.17.1)`
+  (Log4Shell range, 2.17.1+ allowed); `commons-logging:commons-logging:
+  [,1.3.0)` — a range ban, because Spring Framework 7 `spring-core` itself
+  declares the modern 1.3.x facade and a full ban would break the build
+  without removing any vulnerable version.
+- `security.yml` (PR-gated + weekly schedule + dispatch): `dependency-review`
+  (`fail-on-severity: high`, PR comment summary); `sast-sbom` runs the
+  `security` Maven profile — SpotBugs 4.10.3.0 + FindSecBugs at
+  effort=Max/threshold=Low/`failOnError`, plus the CycloneDX aggregate SBOM
+  (`target/bom.json`/`bom.xml`) uploaded as an artifact; `trivy-fs`
+  (vuln+secret, HIGH/CRITICAL, SARIF) is the always-on PR vulnerability gate
+  and needs no API key (OSV-based); `trivy-config` matrix-scans `deploy/`
+  and all 13 service directories; `dependency-check` (OWASP, CVSS≥7) runs
+  scheduled/dispatch only and is **key-optional** — it uses
+  `secrets.NVD_API_KEY` when present and otherwise exits with a `::notice::`
+  skip, so it never blocks on a missing secret and no new repo secret was
+  added.
+- FindSecBugs triage policy: real findings are fixed in code — e.g.
+  `RC_REF_COMPARISON` surfaced a genuine boxed-Long authorization comparison
+  bug in appointment-service (fixed to `.equals`), `UNSAFE_HASH_EQUALS`
+  became a constant-time `MessageDigest.isEqual` comparison across all four
+  audit-integrity hash checks, and bare `RuntimeException` throws in
+  notification-service became a typed `EmailSendException`. Justified false
+  positives are suppressed only in `spotbugs-exclude.xml`, every entry with
+  a rationale; two documented pattern-level deviations exist
+  (`CRLF_INJECTION_LOGS` — containers reject CR/LF in request lines/headers
+  and no auth decision is derived from logs; `SPRING_ENDPOINT` — informational
+  endpoint inventory behind fail-closed filter chains). Two
+  `IMPROPER_UNICODE` entries are method-scoped with the `Locale.ROOT` pin as
+  the stated mitigation (display-name capitalization; role enum lookup that
+  fails closed on any non-mapping string).
+- DAST: `dast.yml` (weekly schedule + dispatch, never a PR gate) boots the
+  core stack from `deploy/compose.yml` with a throwaway RSA keypair,
+  baseline-scans the **gateway's public surface only** with a digest-pinned
+  ZAP image, and gates on an explicit `jq` count of High-risk alerts —
+  failure semantics do not depend on the rules file. genai-service is
+  excluded by design (it stays down without the `ai` profile). GitHub cron
+  fires only on the default branch, so scheduled runs are dispatch-verified
+  on the review branch and become live post-merge.
+- Release gating: `release.yml` gained an `image-scan` matrix job (Trivy
+  HIGH/CRITICAL on every published GHCR image) between `publish` and
+  `promote-dev`, so a vulnerable image blocks promotion.
+- Manifest policy: `deploy/scripts/verify-manifest-policy.sh` (wired into
+  `ci.yml`'s `deployment-contract`, both environments) enforces kubeconform
+  strict schema validation, exactly 11 NetworkPolicies, pod/container
+  hardening (`automountServiceAccountToken: false`, `runAsNonRoot`,
+  `allowPrivilegeEscalation: false`, `capabilities.drop: ALL`, CPU+memory
+  limits), Deployment-only `readOnlyRootFilesystem` + liveness/readiness
+  probes, ghcr.io images with explicit non-`latest` tags, and
+  secret-reference-to-ExternalSecret matching. Every assertion family is
+  mutation-tested: a deliberately broken render fails exactly the expected
+  way.
+- Image provenance: all 13 service Dockerfiles pin the base image by
+  multi-arch digest
+  (`eclipse-temurin:25-jre-jammy@sha256:b8ba5f…1ab5`, amd64+arm64+ppc64le+
+  s390x verified) with the tag retained so Dependabot's new `docker`
+  ecosystem entry refreshes the digest weekly. All workflow actions remain
+  SHA-pinned.
+- Deviations: StatefulSets (PostgreSQL/Redis/MongoDB) are exempt from
+  `readOnlyRootFilesystem` and probe assertions — they remain held to
+  non-root, no escalation, drop ALL, and resource limits; read-only roots
+  need emptyDir scratch mounts validated on a live cluster (follow-up).
+  Dependency-Check is scheduled-only by explicit decision (Trivy fs is the
+  PR vulnerability gate). ZAP is scheduled-only by explicit decision (not a
+  PR gate).
 
 ## Completion gates
 

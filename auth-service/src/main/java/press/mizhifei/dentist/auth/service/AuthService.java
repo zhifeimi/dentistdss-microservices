@@ -133,7 +133,7 @@ public class AuthService {
         Role staffRole;
         try {
             staffRole = Role.fromString(signUpStaffRequest.getRole());
-        } catch (IllegalArgumentException | NullPointerException ex) {
+        } catch (IllegalArgumentException ex) {
             return ApiResponse.error("Invalid staff role");
         }
         if (staffRole != Role.DENTIST && staffRole != Role.RECEPTIONIST) {
@@ -551,7 +551,9 @@ public class AuthService {
         if (authentication == null || !authentication.isAuthenticated()) {
             return ApiResponse.error("User not authenticated");
         }
-        UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+        if (!(authentication.getPrincipal() instanceof UserPrincipal userPrincipal)) {
+            return ApiResponse.error("User not authenticated");
+        }
         User user = userRepository.findByEmail(userPrincipal.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found"));
         return ApiResponse.success(user.toUserResponse());
@@ -565,7 +567,9 @@ public class AuthService {
         if (authentication == null || !authentication.isAuthenticated()) {
             return ApiResponse.error("User not authenticated");
         }
-        UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+        if (!(authentication.getPrincipal() instanceof UserPrincipal userPrincipal)) {
+            return ApiResponse.error("User not authenticated");
+        }
         User user = userRepository.findByEmail(userPrincipal.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found"));
         user.setPassword(passwordEncoder.encode(changePasswordRequest.getNewPassword()));

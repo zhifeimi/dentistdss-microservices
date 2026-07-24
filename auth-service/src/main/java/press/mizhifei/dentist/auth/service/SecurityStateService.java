@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 @Service
@@ -109,7 +110,7 @@ public class SecurityStateService {
     }
 
     public boolean isAllowed(String category, String identity, int limit, Duration window) {
-        String normalizedIdentity = identity == null ? "unknown" : identity.trim().toLowerCase();
+        String normalizedIdentity = identity == null ? "unknown" : identity.trim().toLowerCase(Locale.ROOT);
         Long count = redisTemplate.execute(
                 RATE_LIMIT_SCRIPT,
                 List.of("security:rate:" + category + ":" + normalizedIdentity),

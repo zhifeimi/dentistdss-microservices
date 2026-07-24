@@ -1,5 +1,7 @@
 package press.mizhifei.dentist.userprofile.model;
 
+import java.util.Locale;
+
 /**
  *
  * @author zhifeimi
@@ -16,6 +18,6 @@ public enum Role {
     PATIENT;
 
     public static Role fromString(String role) {
-        return Role.valueOf(role.toUpperCase());
+        return Role.valueOf(role.toUpperCase(Locale.ROOT));
     }
 }
