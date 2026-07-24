@@ -136,9 +136,13 @@ battery (one deliberate break per assertion family).
   baseline-scans the **gateway's public surface only** with a digest-pinned
   ZAP image, and gates on an explicit `jq` count of High-risk alerts —
   failure semantics do not depend on the rules file. genai-service is
-  excluded by design (it stays down without the `ai` profile). GitHub cron
-  fires only on the default branch, so scheduled runs are dispatch-verified
-  on the review branch and become live post-merge.
+  excluded by design (it stays down without the `ai` profile). GitHub
+  resolves cron and `workflow_dispatch` only against the default branch:
+  `security.yml`'s scheduled `dependency-check` job was dispatch-verified
+  on the review branch (green — it skips with a notice when `NVD_API_KEY`
+  is absent), but `dast.yml`, whose triggers are schedule/dispatch only,
+  cannot be registered for dispatch before merge; its first live ZAP run
+  is the post-merge weekly cron or a manual dispatch on `main`.
 - Release gating: `release.yml` gained an `image-scan` matrix job (Trivy
   HIGH/CRITICAL on every published GHCR image) between `publish` and
   `promote-dev`, so a vulnerable image blocks promotion.
