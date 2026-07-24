@@ -23,11 +23,24 @@ public class AuditEntry {
     @Id
     private String id;
 
-    private String actor;       // user or service that triggered
+    /** Verified service caller the credential subject identifies; server-assigned. */
+    private String actor;
     private String action;      // e.g. CREATE_PATIENT
     private String target;      // resource id or description
+
+    /** Caller-claimed context: who the event concerns (not independently verified). */
+    private Long assertedUserId;
+    private Long assertedClinicId;
 
     private LocalDateTime timestamp;
 
     private Map<String, Object> context; // additional metadata
+
+    /**
+     * SHA-256 over this document's canonical form, assigned at ingest
+     * (AUDIT-01). Recomputable from the stored fields alone, so verifiers
+     * can detect field-level edits. Entries written before this feature
+     * simply lack the field and are never sealed.
+     */
+    private String contentHash;
 } 

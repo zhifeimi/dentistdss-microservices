@@ -1,11 +1,12 @@
 package press.mizhifei.dentist.clinic.service;
 
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.clinic.client.AppointmentServiceClient;
-import press.mizhifei.dentist.clinic.client.AuthServiceClient;
+import press.mizhifei.dentist.clinic.client.UserProfileServiceClient;
 import press.mizhifei.dentist.clinic.client.PatientServiceClient;
 import press.mizhifei.dentist.clinic.dto.ClinicResponse;
 import press.mizhifei.dentist.clinic.dto.ClinicSearchRequest;
@@ -41,7 +42,7 @@ public class ClinicService {
     private final ClinicRepository clinicRepository;
     private final AppointmentServiceClient appointmentServiceClient;
     private final PatientServiceClient patientServiceClient;
-    private final AuthServiceClient authServiceClient;
+    private final UserProfileServiceClient userProfileServiceClient;
 
     @Transactional(readOnly = true)
     public List<ClinicResponse> listAllEnabledClinics() {
@@ -90,16 +91,6 @@ public class ClinicService {
                 .enabled(false)
                 .approved(false)
                 .build();
-        Clinic saved = clinicRepository.save(clinic);
-        return convertToDto(saved);
-    }
-
-    @Transactional
-    public ClinicResponse approveClinic(Long id) {
-        Clinic clinic = clinicRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + id));
-        clinic.setApproved(true);
-        clinic.setEnabled(true);
         Clinic saved = clinicRepository.save(clinic);
         return convertToDto(saved);
     }
@@ -165,6 +156,7 @@ public class ClinicService {
                 patientIds = new ArrayList<>();
             }
         } catch (Exception e) {
+            rethrowAppointmentSecurityFailure(e);
             log.error("Error calling appointment service for clinic {}: {}", clinicId, e.getMessage());
             patientIds = new ArrayList<>();
         }
@@ -216,7 +208,7 @@ public class ClinicService {
                 .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + clinicId));
 
         try {
-            List<UserResponse> dentists = authServiceClient.getClinicDentists(clinicId);
+            List<UserResponse> dentists = userProfileServiceClient.getClinicDentists(clinicId);
             log.debug("Found {} dentists for clinic {}", dentists.size(), clinicId);
             return dentists;
         } catch (Exception e) {
@@ -238,6 +230,7 @@ public class ClinicService {
                 lastVisit = lastResponse.getDataObject().get(0).getAppointmentDate();
             }
         } catch (Exception e) {
+            rethrowAppointmentSecurityFailure(e);
             log.warn("Failed to get last appointment for patient {} in clinic {}: {}",
                     patient.getId(), clinicId, e.getMessage());
         }
@@ -253,6 +246,7 @@ public class ClinicService {
                 nextAppointment = LocalDateTime.of(next.getAppointmentDate(), next.getStartTime());
             }
         } catch (Exception e) {
+            rethrowAppointmentSecurityFailure(e);
             log.warn("Failed to get upcoming appointment for patient {} in clinic {}: {}",
                     patient.getId(), clinicId, e.getMessage());
         }
@@ -268,6 +262,15 @@ public class ClinicService {
                 .lastVisit(lastVisit)
                 .nextAppointment(nextAppointment)
                 .build();
+    }
+
+    private void rethrowAppointmentSecurityFailure(Exception exception) {
+        if (exception instanceof FeignException feignException
+                && (feignException.status() == 401
+                || feignException.status() == 403
+                || feignException.status() == 503)) {
+            throw feignException;
+        }
     }
 
     private Comparator<PatientWithAppointmentResponse> createPatientComparator() {

@@ -26,7 +26,17 @@ that tag before Argo CD can reconcile the application.
 Create these KV v2 records:
 
 - `kv/apps/dentistdss/dev/runtime`
+- `kv/apps/dentistdss/dev/genai-service-auth`
+- `kv/apps/dentistdss/dev/service-auth/auth`
+- `kv/apps/dentistdss/dev/service-auth/appointment`
+- `kv/apps/dentistdss/dev/service-auth/clinical-records`
+- `kv/apps/dentistdss/dev/service-auth/notification`
 - `kv/apps/dentistdss/prod/runtime`
+- `kv/apps/dentistdss/prod/genai-service-auth`
+- `kv/apps/dentistdss/prod/service-auth/auth`
+- `kv/apps/dentistdss/prod/service-auth/appointment`
+- `kv/apps/dentistdss/prod/service-auth/clinical-records`
+- `kv/apps/dentistdss/prod/service-auth/notification`
 
 Each environment requires a `vault-dentistdss-token` Secret in its application
 namespace. The token must have read access only to that environment's runtime
@@ -40,6 +50,9 @@ POSTGRES_PASSWORD
 MONGO_INITDB_ROOT_PASSWORD
 SPRING_CONFIG_USER
 SPRING_CONFIG_PASS
+REDIS_PASSWORD
+ANONYMOUS_SESSION_FINGERPRINT_KEY
+EMAIL_VERIFICATION_CODE_PEPPER
 JWT_RSA_PRIVATE_KEY
 JWT_RSA_PUBLIC_KEY
 JWT_RSA_KEY_ID
@@ -53,15 +66,88 @@ SPRING_DATA_MONGODB_URI
 MONGODB_URI
 ```
 
-Seed each record interactively without printing credentials:
+The chart never mounts the runtime record wholesale. `externalSecrets.records`
+in `values.yaml` maps each Kubernetes Secret name to the record properties it
+may contain, and one ExternalSecret is rendered per entry. Each service then
+lists exactly the Secrets it needs under `services.<name>.secrets`, so a
+compromised pod only reads the credentials for its own databases and keys.
+Keep the record schema above and the `records` map in sync when adding keys.
+
+Each `genai-service-auth` record requires a dedicated gateway-to-GenAI key pair:
+
+```text
+GENAI_SERVICE_AUTH_PRIVATE_KEY
+GENAI_SERVICE_AUTH_PUBLIC_KEY
+GENAI_SERVICE_AUTH_KEY_ID
+```
+
+Use a single-line PKCS#8 private key and X.509 public key. The chart references
+all three values only from `api-gateway`; `genai-service` receives only the
+public key and key ID. Do not add these values to the broad runtime record.
+
+Each `service-auth/<issuer>` record holds one dedicated RSA key pair per
+issuing service:
+
+```text
+SERVICE_AUTH_PRIVATE_KEY
+SERVICE_AUTH_PUBLIC_KEY
+SERVICE_AUTH_KEY_ID
+```
+
+Issuers sign short-lived (30-second) audience-scoped RS256 credentials for
+authenticated backend-to-backend calls. The chart wires the records as follows
+(every reference is `optional: true` — until the records are seeded, issuers
+stay dormant and target endpoints reject uncredentialed calls, as before):
+
+- each issuer (`auth-service`, `appointment-service`,
+  `clinical-records-service`, `notification-service`) receives its own private
+  key and key ID from its own record;
+- `notification-service` additionally trusts the public keys of `auth-service`
+  (scope `notification:email`) and of `appointment-service` and
+  `clinical-records-service` (scope `notification:send`);
+- `audit-service` trusts `auth-service` (scope `audit:ingest`);
+- `user-profile-service` trusts `notification-service` (scope
+  `user:contact:read`).
+
+Use a single-line PKCS#8 private key and X.509 public key per pair, and a
+unique `SERVICE_AUTH_KEY_ID` per issuer. Do not reuse the JWT keys or the
+gateway-to-GenAI keys, and never add these values to the broad runtime record.
+
+Seed each runtime record interactively without printing credentials:
 
 ```bash
 ./deploy/scripts/seed-vault-runtime.sh dev
 ./deploy/scripts/seed-vault-runtime.sh prod
 ```
 
-The helper generates independent database, Config Server, and 3072-bit RSA JWT
-values. It prompts locally for the Vault token, Google OAuth, and SMTP values.
+The helper generates independent database, Config Server, Redis, fingerprint,
+verification-code pepper, and 3072-bit RSA JWT values. It prompts locally for
+the Vault token, Google OAuth, and SMTP values.
+
+## Workloads and network policy
+
+The chart renders `postgres`, `mongo`, and `redis` StatefulSets alongside the
+service Deployments. Redis is authenticated: it starts with
+`--requirepass "$REDIS_PASSWORD"` from the `dentistdss-redis` Secret, and every
+consumer in `values.yaml` receives `REDIS_HOST`/`REDIS_PORT` plus the password.
+Production service configuration requires the Redis password with no default,
+so a missing Secret fails startup instead of silently opening an
+unauthenticated connection.
+
+NetworkPolicies default-deny the namespace and then allow only:
+
+- intra-namespace traffic to application pods (databases excluded);
+- PostgreSQL ingress from the seven JDBC services on 5432;
+- MongoDB ingress from `clinical-records-service`, `audit-service`, and
+  `genai-service` on 27017;
+- Redis ingress from its seven consumers on 6379;
+- gateway-to-GenAI and external LoadBalancer ingress to `api-gateway`;
+- DNS egress to `kube-system` and selected external egress for pods labeled
+  `dentistdss.io/external-egress: "true"` (CGNAT and link-local ranges stay
+  blocked).
+
+When a service gains or loses a database dependency, update both its
+`secrets` list and the matching `allow-*-clients` policy.
 
 The release workflow makes the repository-linked GHCR images public before it
 updates either GitOps branch, so no long-lived registry credential is stored in

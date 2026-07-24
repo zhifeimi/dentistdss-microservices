@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: genai-service
+  codec:
+    max-in-memory-size: ${GENAI_MAX_REQUEST_BYTES:64KB}
   config:
     import: optional:configserver:http://localhost:8888
   cloud:
@@ -12,38 +14,63 @@ spring:
       username: ${SPRING_CONFIG_USER}
       password: ${SPRING_CONFIG_PASS}
       fail-fast: false
+  mongodb:
+    uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/dentistdss?authSource=admin
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://localhost:8081}/auth/oauth2/jwks
   data:
-    mongodb:
-      uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/dentistdss?authSource=admin
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
   ai:
     model:
-      chat: vertexai
-    # AI Provider Configuration
-    vertex:
-      ai:
-        embedding:
-          project-id: ${VERTEX_AI_PROJECT_ID:}
-          location: ${VERTEX_AI_LOCATION:us-central1}
-        gemini:
-          project-id: ${VERTEX_AI_PROJECT_ID:}
-          location: ${VERTEX_AI_LOCATION:us-central1}
-          chat:
-            options:
-              model: ${GEMINI_MODEL:gemini-2.5-pro-preview-05-06}
+      chat: google-genai
+    google:
+      genai:
+        project-id: ${VERTEX_AI_PROJECT_ID:}
+        location: ${VERTEX_AI_LOCATION:us-central1}
+        chat:
+          model: ${GEMINI_MODEL:gemini-2.5-flash}
+          temperature: ${GEMINI_TEMPERATURE:0.7}
+          max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
 
+jwt:
+  issuer: ${JWT_ISSUER:http://localhost:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
 
-
+app:
+  security:
+    genai-service-auth:
+      public-key: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:}
+      key-id: ${GENAI_SERVICE_AUTH_KEY_ID:}
+    anonymous-session:
+      namespace: ${ANONYMOUS_SESSION_NAMESPACE:local}
 
 # GenAI Provider Configuration
 genai:
+  prompt:
+    max-characters: ${GENAI_MAX_PROMPT_CHARACTERS:8000}
+  rate-limit:
+    capacity: ${GENAI_RATE_LIMIT_CAPACITY:10000}
+    refill-period: ${GENAI_RATE_LIMIT_REFILL_PERIOD:PT3M}
+    max-concurrent-streams: ${GENAI_MAX_CONCURRENT_STREAMS:2}
+    stream-lease: ${GENAI_STREAM_LEASE:PT10M}
+  conversation:
+    max-history-messages: ${GENAI_MAX_HISTORY_MESSAGES:10}
+    max-stored-messages: ${GENAI_MAX_STORED_MESSAGES:50}
   providers:
-    vertexai:
+    google-gen-ai:
       enabled: ${VERTEX_AI_ENABLED:true}
       project-id: ${VERTEX_AI_PROJECT_ID:}
       location: ${VERTEX_AI_LOCATION:us-central1}
-      default-model: ${GEMINI_MODEL:gemini-2.5-pro-preview-05-06}
-      max-tokens: 4096
-      temperature: 0.7
+      default-model: ${GEMINI_MODEL:gemini-2.5-flash}
+      max-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
+      temperature: ${GEMINI_TEMPERATURE:0.7}
 
 eureka:
   client:
@@ -60,7 +87,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues

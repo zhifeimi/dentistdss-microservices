@@ -16,34 +16,28 @@ spring:
     username: dentistdss
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  # Schema migrations: Flyway applies the baseline bundled in the db-migrations
+  # module (classpath:db/migration). Databases without flyway_schema_history
+  # are baselined at version 1 (V1 is skipped, schema untouched); fresh
+  # databases get V1 applied before Hibernate validates the schema.
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: '1'
+    fail-on-missing-locations: true
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
     show-sql: true
 
-  # OAuth2 Configuration
-  security:
-    oauth2:
-      client:
-        registration:
-          google:
-            client-id: ${GOOGLE_CLIENT_ID} # To be overridden by config server
-            client-secret: ${GOOGLE_CLIENT_SECRET} # To be overridden by config server
-            scope:
-              - openid
-              - profile
-              - email
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}" # Spring will resolve baseUrl
-        provider:
-          google:
-            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
-            token-uri: https://oauth2.googleapis.com/token
-            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
-            user-name-attribute: sub
-
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
 
 
 eureka:
@@ -53,9 +47,20 @@ eureka:
   instance:
     preferIpAddress: false
 
+# Feign client tuning: audit relay round-trips are relay-bounded and must
+# never stall the scheduled relay thread waiting on the audit service.
+feign:
+  client:
+    config:
+      audit-service:
+        connect-timeout: 1000
+        read-timeout: 2000
+
 # JWT Configuration
 jwt:
-  expiration: 86400000 # 24 hours in milliseconds
+  expiration: 300000 # 5 minutes in milliseconds
+  issuer: ${JWT_ISSUER:http://localhost:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
   rsa:
     private-key: ${JWT_RSA_PRIVATE_KEY:}
     public-key: ${JWT_RSA_PUBLIC_KEY:}
@@ -92,12 +97,46 @@ logging:
 # App Configuration
 app:
   email-verification:
-    token-expiry-minutes: 43200 # 30 days in minutes
-    code-expiry-minutes: 10 # 10 minutes in minutes
+    code-expiry-minutes: 10
+    code-pepper: ${EMAIL_VERIFICATION_CODE_PEPPER:dev-only-change-me}
     base-url: ${BASE_URL:http://localhost:3000}
-  oauth2:
-    authorizedRedirectUris:
-      - https://dentistdss.vercel.app/oauth2/redirect
-      - https://dentistgpt.vercel.app/oauth2/redirect
-      - https://dentist.mizhifei.press/oauth2/redirect
-      - http://localhost:3000/oauth2/redirect # Default for local React app
+  oauth:
+    google-client-id: ${GOOGLE_CLIENT_ID}
+  security:
+    refresh-token-days: 30
+    # Durable outbox for Redis session-family tombstones. Every database
+    # revocation records a pending row before the synchronous publication is
+    # attempted; the replay worker retries failures and the sweep re-enqueues
+    # revoked families whose Redis state key is missing.
+    outbox:
+      enabled: ${SECURITY_OUTBOX_ENABLED:true}
+      replay-delay-ms: ${SECURITY_OUTBOX_REPLAY_DELAY_MS:30000}
+      replay-initial-delay-ms: ${SECURITY_OUTBOX_REPLAY_INITIAL_DELAY_MS:15000}
+      retry-backoff-ms: ${SECURITY_OUTBOX_RETRY_BACKOFF_MS:30000}
+      replay-batch-size: ${SECURITY_OUTBOX_REPLAY_BATCH_SIZE:100}
+      sweep-enabled: ${SECURITY_OUTBOX_SWEEP_ENABLED:true}
+      sweep-delay-ms: ${SECURITY_OUTBOX_SWEEP_DELAY_MS:300000}
+      sweep-initial-delay-ms: ${SECURITY_OUTBOX_SWEEP_INITIAL_DELAY_MS:60000}
+      sweep-batch-size: ${SECURITY_OUTBOX_SWEEP_BATCH_SIZE:500}
+    # Durable audit event outbox (AUDIT-01). Events are written in the
+    # caller's transaction and delivered to audit-service by the scheduled
+    # relay; failed deliveries are retried with backoff and never discarded.
+    audit-outbox:
+      enabled: ${SECURITY_AUDIT_OUTBOX_ENABLED:true}
+      relay-delay-ms: ${SECURITY_AUDIT_OUTBOX_RELAY_DELAY_MS:5000}
+      relay-initial-delay-ms: ${SECURITY_AUDIT_OUTBOX_RELAY_INITIAL_DELAY_MS:10000}
+      retry-backoff-ms: ${SECURITY_AUDIT_OUTBOX_RETRY_BACKOFF_MS:30000}
+      relay-batch-size: ${SECURITY_AUDIT_OUTBOX_RELAY_BATCH_SIZE:100}
+      stale-warn-threshold: ${SECURITY_AUDIT_OUTBOX_STALE_WARN_THRESHOLD:20}
+    cookies:
+      secure: false
+      same-site: Lax
+    # Outbound service credentials: this service signs 30-second RS256
+    # credentials (sub auth-service) for its Feign calls to audit-service
+    # and notification-service. Empty defaults keep the Feign interceptors
+    # dormant locally until keys are provisioned; targets then reject the
+    # unauthenticated calls exactly as before.
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: auth-service

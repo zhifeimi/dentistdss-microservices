@@ -10,11 +10,30 @@ spring:
     name: appointment-service
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@localhost:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://localhost:8081}/auth/oauth2/jwks
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
   datasource:
     url: jdbc:postgresql://localhost:5432/dentistdss
     username: dentistdss
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  # Schema migrations: Flyway applies the baseline bundled in the db-migrations
+  # module (classpath:db/migration). Databases without flyway_schema_history
+  # are baselined at version 1 (V1 is skipped, schema untouched); fresh
+  # databases get V1 applied before Hibernate validates the schema.
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: '1'
+    fail-on-missing-locations: true
   jpa:
     hibernate:
       ddl-auto: validate
@@ -25,6 +44,23 @@ spring:
         format_sql: true
         jdbc:
           time_zone: UTC
+
+jwt:
+  issuer: ${JWT_ISSUER:http://localhost:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
+
+# =============================================================================
+# Service-to-Service Authentication (Issuer)
+# =============================================================================
+# appointment-service signs short-lived audience-scoped credentials for its
+# notification-service calls. With keys unconfigured the Feign interceptor
+# stays dormant and calls proceed without the service-authorization header.
+app:
+  security:
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: appointment-service
 
 # =============================================================================
 # Service Discovery Configuration

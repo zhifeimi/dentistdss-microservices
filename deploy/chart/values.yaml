@@ -13,11 +13,49 @@ externalSecrets:
   storeName: homelab-vault-dentistdss
   tokenSecretName: vault-dentistdss-token
   runtimePath: apps/dentistdss/dev/runtime
+  genaiServiceAuthPath: apps/dentistdss/dev/genai-service-auth
+  # One Vault record per issuing service (auth/appointment/clinical-records/
+  # notification), each holding SERVICE_AUTH_PRIVATE_KEY, _PUBLIC_KEY, _KEY_ID.
+  serviceAuthPath: apps/dentistdss/dev/service-auth
+  # The genai-service-auth record historically came from the cluster-wide
+  # store; override these to move it onto the namespace-scoped store.
+  genaiStoreKind: ClusterSecretStore
+  genaiStoreName: homelab-vault
+  # Least-privilege slices of the single runtime record. Each entry renders
+  # one ExternalSecret (named after the key) holding only the listed
+  # properties, so a compromised pod only sees the credentials it needs.
+  records:
+    dentistdss-config-client:
+      - SPRING_CONFIG_USER
+      - SPRING_CONFIG_PASS
+    dentistdss-postgres:
+      - POSTGRES_PASSWORD
+    dentistdss-mongo:
+      - MONGO_INITDB_ROOT_PASSWORD
+      - MONGODB_URI
+      - SPRING_DATA_MONGODB_URI
+    dentistdss-redis:
+      - REDIS_PASSWORD
+    dentistdss-auth-keys:
+      - JWT_RSA_PRIVATE_KEY
+      - JWT_RSA_PUBLIC_KEY
+      - JWT_RSA_KEY_ID
+      - GOOGLE_CLIENT_ID
+      - GOOGLE_CLIENT_SECRET
+      - EMAIL_VERIFICATION_CODE_PEPPER
+    dentistdss-gateway:
+      - ANONYMOUS_SESSION_FINGERPRINT_KEY
+    dentistdss-mail:
+      - MAIL_HOST
+      - MAIL_PORT
+      - MAIL_USERNAME
+      - MAIL_PASSWORD
 
 persistence:
   storageClass: local-path
   postgresSize: 20Gi
   mongoSize: 20Gi
+  redisSize: 2Gi
 
 commonEnv:
   SPRING_PROFILES_ACTIVE: prod
@@ -51,16 +89,27 @@ services:
   api-gateway:
     port: 8080
     replicas: 2
+    secrets:
+      - dentistdss-redis
+      - dentistdss-gateway
     env:
       SERVER_PORT: "8080"
       SERVER_SSL_ENABLED: "false"
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   auth-service:
     port: 8081
     replicas: 1
     externalEgress: true
+    secrets:
+      - dentistdss-postgres
+      - dentistdss-redis
+      - dentistdss-auth-keys
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       BASE_URL: https://dentistdss.vercel.app
       APP_OAUTH2_AUTHORIZEDREDIRECTURIS_0: https://dentistdss.vercel.app/oauth2/redirect
       APP_OAUTH2_AUTHORIZEDREDIRECTURIS_1: https://dentistgpt.vercel.app/oauth2/redirect
@@ -68,52 +117,86 @@ services:
   clinic-service:
     port: 8083
     replicas: 1
+    secrets:
+      - dentistdss-postgres
+      - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   genai-service:
     port: 8084
     replicas: 1
     enabled: false
     externalEgress: true
+    secrets:
+      - dentistdss-mongo
+      - dentistdss-redis
     env:
       VERTEX_AI_ENABLED: "true"
       VERTEX_AI_LOCATION: australia-southeast1
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   user-profile-service:
     port: 8085
     replicas: 1
+    secrets:
+      - dentistdss-postgres
+      - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   system-service:
     port: 8086
     replicas: 1
+    secrets:
+      - dentistdss-postgres
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       AUTH_SERVICE_URL: http://auth-service:8081
   audit-service:
     port: 8087
     replicas: 1
+    secrets:
+      - dentistdss-mongo
     env:
       AUTH_SERVICE_URL: http://auth-service:8081
   notification-service:
     port: 8088
     replicas: 1
     externalEgress: true
+    secrets:
+      - dentistdss-postgres
+      - dentistdss-mail
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       BASE_URL: https://dentistdss.vercel.app
   appointment-service:
     port: 8089
     replicas: 1
+    secrets:
+      - dentistdss-postgres
+      - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   clinical-records-service:
     port: 8090
     replicas: 1
+    secrets:
+      - dentistdss-postgres
+      - dentistdss-mongo
+      - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   admin-server:
     port: 9090
     replicas: 1
@@ -134,3 +217,11 @@ databaseResources:
   limits:
     cpu: "2"
     memory: 2Gi
+
+redisResources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

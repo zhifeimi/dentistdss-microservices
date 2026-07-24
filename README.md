@@ -36,7 +36,7 @@ Centralized security architecture where API Gateway handles JWT validation while
 
 ### Prerequisites
 - Docker and Docker Compose
-- JDK 21 (for local development)
+- JDK 25 (for local development)
 - Maven
 
 ### Local Development

@@ -1,0 +1,8 @@
+package press.mizhifei.dentist.appointment.exception;
+
+public class AppointmentConflictException extends RuntimeException {
+
+    public AppointmentConflictException(String message) {
+        super(message);
+    }
+}

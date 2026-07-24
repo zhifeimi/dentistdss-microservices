@@ -8,3 +8,10 @@ gateway:
 externalSecrets:
   vaultServer: https://10.80.0.13:8200
   runtimePath: apps/dentistdss/prod/runtime
+  genaiServiceAuthPath: apps/dentistdss/prod/genai-service-auth
+  serviceAuthPath: apps/dentistdss/prod/service-auth
+
+# Match the dev heap/exit policy so prod containers honor their memory limits
+# and fail fast on OOM instead of limping in a degraded state.
+commonEnv:
+  JAVA_TOOL_OPTIONS: -Xms64m -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError

@@ -1,59 +1,100 @@
 package press.mizhifei.dentist.appointment.service;
 
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import press.mizhifei.dentist.appointment.client.AuthServiceClient;
+import press.mizhifei.dentist.appointment.client.UserProfileServiceClient;
 import press.mizhifei.dentist.appointment.client.ClinicServiceClient;
 import press.mizhifei.dentist.appointment.client.NotificationClient;
-import press.mizhifei.dentist.appointment.dto.*;
-import press.mizhifei.dentist.appointment.model.*;
-import press.mizhifei.dentist.appointment.repository.*;
+import press.mizhifei.dentist.appointment.client.ServiceResponse;
+import press.mizhifei.dentist.appointment.dto.ApiResponse;
+import press.mizhifei.dentist.appointment.dto.AppointmentRequest;
+import press.mizhifei.dentist.appointment.dto.AppointmentResponse;
+import press.mizhifei.dentist.appointment.dto.AvailableSlotResponse;
+import press.mizhifei.dentist.appointment.exception.AppointmentConflictException;
+import press.mizhifei.dentist.appointment.exception.AppointmentDependencyUnavailableException;
+import press.mizhifei.dentist.appointment.exception.AppointmentNotFoundException;
+import press.mizhifei.dentist.appointment.exception.InvalidAppointmentRequestException;
+import press.mizhifei.dentist.appointment.model.Appointment;
+import press.mizhifei.dentist.appointment.model.AppointmentStatus;
+import press.mizhifei.dentist.appointment.model.DentistAvailability;
+import press.mizhifei.dentist.appointment.model.UrgencyLevel;
+import press.mizhifei.dentist.appointment.repository.AppointmentRepository;
+import press.mizhifei.dentist.appointment.repository.DentistAvailabilityRepository;
+import press.mizhifei.dentist.appointment.security.AppointmentActor;
 
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.function.Supplier;
 
-/**
- *
- * @author zhifeimi
- * @email zm377@uowmail.edu.au
- * @github https://github.com/zm377
- *
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AppointmentService {
-    
+
+    private static final int MAX_SLOT_DURATION_MINUTES = 480;
+    private static final int DEFAULT_SERVICELESS_APPOINTMENT_DURATION_MINUTES = 30;
+    private static final List<AppointmentStatus> NON_BLOCKING_STATUSES = List.of(
+            AppointmentStatus.CANCELLED,
+            AppointmentStatus.NO_SHOW);
+
     private final AppointmentRepository appointmentRepository;
     private final DentistAvailabilityRepository availabilityRepository;
     private final NotificationClient notificationClient;
-    private final AuthServiceClient authServiceClient;
+    private final UserProfileServiceClient userProfileServiceClient;
     private final ClinicServiceClient clinicServiceClient;
-    
+
     @Transactional
-    public AppointmentResponse createAppointment(AppointmentRequest request) {
-        // Validate appointment doesn't conflict with existing appointments
-        List<Appointment> conflicts = appointmentRepository.findConflictingAppointments(
-                request.getDentistId(),
+    public AppointmentResponse createAppointment(
+            AppointmentRequest request,
+            AppointmentActor actor) {
+        validateTimeRange(
                 request.getAppointmentDate(),
                 request.getStartTime(),
-                request.getEndTime()
-        );
-        
-        if (!conflicts.isEmpty()) {
-            throw new IllegalStateException("Time slot conflicts with existing appointment");
+                request.getEndTime());
+        requireFutureStart(
+                request.getAppointmentDate(),
+                request.getStartTime());
+
+        long patientId = resolveCreatePatient(request, actor);
+        requireDentistAvailability(
+                request.getDentistId(),
+                request.getClinicId(),
+                request.getAppointmentDate(),
+                request.getStartTime(),
+                request.getEndTime());
+        ServiceResponse service = validateService(
+                request.getServiceId(),
+                request.getClinicId());
+        requireServiceDuration(
+                service,
+                request.getStartTime(),
+                request.getEndTime());
+        appointmentRepository.acquireDentistScheduleLock(request.getDentistId());
+
+        if (!appointmentRepository.findConflictingAppointments(
+                        request.getDentistId(),
+                        request.getAppointmentDate(),
+                        request.getStartTime(),
+                        request.getEndTime(),
+                        NON_BLOCKING_STATUSES)
+                .isEmpty()) {
+            throw new AppointmentConflictException(
+                    "The requested time slot is unavailable");
         }
-        
-        // Create appointment using saveWithCasting to handle PostgreSQL enum types
+
         Appointment saved = appointmentRepository.saveWithCasting(
-                request.getPatientId(),
+                patientId,
                 request.getDentistId(),
                 request.getClinicId(),
                 request.getServiceId(),
@@ -64,191 +105,294 @@ public class AppointmentService {
                 request.getReasonForVisit(),
                 request.getSymptoms(),
                 parseUrgencyLevel(request.getUrgencyLevel()).name(),
-                null, // aiTriageNotes
+                null,
                 request.getNotes(),
-                request.getCreatedBy()
-        );
-        log.info("Created appointment {} for patient {} with dentist {}", 
-                saved.getId(), saved.getPatientId(), saved.getDentistId());
-        
-        return toResponse(saved);
+                actor.userId());
+        log.info(
+                "Created appointment {} for patient {} with dentist {}",
+                saved.getId(),
+                saved.getPatientId(),
+                saved.getDentistId());
+        return toResponse(saved, true);
     }
-    
-    @Transactional
-    public AppointmentResponse confirmAppointment(Long appointmentId, Long confirmedBy) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
-        
-        if (appointment.getStatus() != AppointmentStatus.REQUESTED) {
-            throw new IllegalStateException("Only requested appointments can be confirmed");
-        }
 
-        Appointment saved = appointmentRepository.updateStatusWithCasting(
-                appointmentId,
-                AppointmentStatus.CONFIRMED.name(),
-                confirmedBy
-        );
-        log.info("Confirmed appointment {} by user {}", appointmentId, confirmedBy);
-        
-        // Send confirmation notification
-        try {
-            sendAppointmentNotification(saved, "appointment_confirmation");
-        } catch (Exception e) {
-            log.error("Failed to send confirmation notification: {}", e.getMessage());
-        }
-        
-        return toResponse(saved);
-    }
-    
     @Transactional
-    public AppointmentResponse cancelAppointment(Long appointmentId, String reason, Long cancelledBy) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
-        
-        if (appointment.getStatus() == AppointmentStatus.CANCELLED) {
-            throw new IllegalStateException("Appointment is already cancelled");
+    public AppointmentResponse confirmAppointment(
+            Long appointmentId,
+            AppointmentActor actor) {
+        Appointment authorized = findAuthorizedAppointment(
+                appointmentId,
+                actor,
+                false,
+                true,
+                true);
+        Appointment saved = runTransition(
+                () -> appointmentRepository.confirmAppointment(
+                        authorized.getId(),
+                        actor.userId()),
+                "Appointment cannot be confirmed in its current state");
+        log.info("Confirmed appointment {} by user {}", appointmentId, actor.userId());
+        try {
+            sendAppointmentNotification(saved);
+        } catch (Exception exception) {
+            log.warn("Appointment confirmation notification was not delivered");
         }
+        return toResponse(saved, mayViewClinicalDetails(saved, actor));
+    }
 
-        Appointment saved = appointmentRepository.updateCancellationWithCasting(
-                appointmentId,
-                AppointmentStatus.CANCELLED.name(),
-                reason,
-                cancelledBy
-        );
-        log.info("Cancelled appointment {} by user {} with reason: {}", 
-                appointmentId, cancelledBy, reason);
-        
-        // Send cancellation notification
-        try {
-            Map<String, Object> notificationRequest = new HashMap<>();
-            notificationRequest.put("userId", appointment.getPatientId());
-            notificationRequest.put("templateName", "appointment_cancelled");
-            notificationRequest.put("type", "EMAIL");
-            
-            Map<String, String> templateVariables = new HashMap<>();
-            templateVariables.put("patient_name", "Patient"); // TODO: Fetch from user service
-            templateVariables.put("appointment_date", appointment.getAppointmentDate().toString());
-            templateVariables.put("cancellation_reason", reason);
-            
-            notificationRequest.put("templateVariables", templateVariables);
-            notificationClient.sendNotification(notificationRequest);
-        } catch (Exception e) {
-            log.error("Failed to send cancellation notification: {}", e.getMessage());
-        }
-        
-        return toResponse(saved);
-    }
-    
     @Transactional
-    public AppointmentResponse rescheduleAppointment(Long appointmentId, 
-                                                     LocalDate newDate, 
-                                                     LocalTime newStartTime,
-                                                     LocalTime newEndTime,
-                                                     Long rescheduledBy) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
-        
-        // Check for conflicts with new time
-        List<Appointment> conflicts = appointmentRepository.findConflictingAppointments(
-                appointment.getDentistId(),
+    public AppointmentResponse cancelAppointment(
+            Long appointmentId,
+            String reason,
+            AppointmentActor actor) {
+        Appointment authorized = findAuthorizedAppointment(
+                appointmentId,
+                actor,
+                true,
+                true,
+                true);
+        Appointment saved = runTransition(
+                () -> appointmentRepository.cancelAppointment(
+                        authorized.getId(),
+                        reason,
+                        actor.userId()),
+                "Appointment cannot be cancelled in its current state");
+        log.info("Cancelled appointment {} by user {}", appointmentId, actor.userId());
+        try {
+            sendCancellationNotification(authorized, reason);
+        } catch (Exception exception) {
+            log.warn("Appointment cancellation notification was not delivered");
+        }
+        return toResponse(saved, mayViewClinicalDetails(saved, actor));
+    }
+
+    @Transactional
+    public AppointmentResponse rescheduleAppointment(
+            Long appointmentId,
+            LocalDate newDate,
+            LocalTime newStartTime,
+            LocalTime newEndTime,
+            AppointmentActor actor) {
+        validateTimeRange(newDate, newStartTime, newEndTime);
+        requireFutureStart(newDate, newStartTime);
+
+        Appointment authorized = findAuthorizedAppointment(
+                appointmentId,
+                actor,
+                true,
+                true,
+                true);
+        requireDentistAvailability(
+                authorized.getDentistId(),
+                authorized.getClinicId(),
                 newDate,
                 newStartTime,
-                newEndTime
-        );
-        
-        conflicts.removeIf(a -> a.getId().equals(appointmentId)); // Remove self
-        
-        if (!conflicts.isEmpty()) {
-            throw new IllegalStateException("New time slot conflicts with existing appointment");
+                newEndTime);
+        ServiceResponse service = validateService(
+                authorized.getServiceId(),
+                authorized.getClinicId());
+        requireServiceDuration(service, newStartTime, newEndTime);
+        appointmentRepository.acquireDentistScheduleLock(authorized.getDentistId());
+
+        boolean hasConflict = appointmentRepository.findConflictingAppointments(
+                        authorized.getDentistId(),
+                        newDate,
+                        newStartTime,
+                        newEndTime,
+                        NON_BLOCKING_STATUSES)
+                .stream()
+                .anyMatch(appointment -> !appointment.getId().equals(appointmentId));
+        if (hasConflict) {
+            throw new AppointmentConflictException(
+                    "The requested time slot is unavailable");
         }
-        
-        Appointment saved = appointmentRepository.updateScheduleWithCasting(
+
+        Appointment saved = runTransition(
+                () -> appointmentRepository.rescheduleAppointment(
+                        authorized.getId(),
+                        newDate,
+                        newStartTime,
+                        newEndTime),
+                "Appointment cannot be rescheduled in its current state");
+        log.info("Rescheduled appointment {} by user {}", appointmentId, actor.userId());
+        return toResponse(saved, mayViewClinicalDetails(saved, actor));
+    }
+
+    @Transactional
+    public AppointmentResponse completeAppointment(
+            Long appointmentId,
+            AppointmentActor actor) {
+        Appointment authorized = findAuthorizedAppointment(
                 appointmentId,
-                newDate,
-                newStartTime,
-                newEndTime,
-                AppointmentStatus.RESCHEDULED.name()
-        );
-        log.info("Rescheduled appointment {} to {} at {} by user {}", 
-                appointmentId, newDate, newStartTime, rescheduledBy);
-        
-        return toResponse(saved);
+                actor,
+                false,
+                true,
+                true);
+        Appointment saved = runTransition(
+                () -> appointmentRepository.completeAppointment(authorized.getId()),
+                "Appointment cannot be completed in its current state");
+        return toResponse(saved, mayViewClinicalDetails(saved, actor));
     }
-    
-    @Transactional(readOnly = true)
-    public List<AppointmentResponse> getPatientAppointments(Long patientId) {
-        List<Appointment> appointments = appointmentRepository
-                .findByPatientIdOrderByAppointmentDateDescStartTimeDesc(patientId);
-        return appointments.stream().map(this::toResponse).collect(Collectors.toList());
+
+    @Transactional
+    public AppointmentResponse markNoShow(
+            Long appointmentId,
+            AppointmentActor actor) {
+        Appointment authorized = findAuthorizedAppointment(
+                appointmentId,
+                actor,
+                false,
+                true,
+                true);
+        if (LocalDateTime.of(
+                        authorized.getAppointmentDate(),
+                        authorized.getStartTime())
+                .isAfter(LocalDateTime.now())) {
+            throw new AppointmentConflictException(
+                    "Appointment cannot be marked as no-show before it starts");
+        }
+        Appointment saved = runTransition(
+                () -> appointmentRepository.markNoShow(authorized.getId()),
+                "Appointment cannot be marked as no-show in its current state");
+        return toResponse(saved, mayViewClinicalDetails(saved, actor));
     }
-    
+
     @Transactional(readOnly = true)
-    public List<AppointmentResponse> getDentistAppointments(Long dentistId, LocalDate date) {
-        List<Appointment> appointments = appointmentRepository
-                .findByDentistIdAndAppointmentDateOrderByStartTime(dentistId, date);
-        return appointments.stream().map(this::toResponse).collect(Collectors.toList());
+    public List<AppointmentResponse> getPatientAppointments(
+            Long patientId,
+            AppointmentActor actor) {
+        List<Appointment> appointments;
+        boolean includeClinicalDetails;
+        if (actor.isSystemAdmin()) {
+            appointments = appointmentRepository
+                    .findByPatientIdOrderByAppointmentDateDescStartTimeDesc(patientId);
+            includeClinicalDetails = true;
+        } else if (actor.isPatient()) {
+            if (actor.userId() != patientId) {
+                throw new AppointmentNotFoundException();
+            }
+            appointments = appointmentRepository
+                    .findByPatientIdOrderByAppointmentDateDescStartTimeDesc(patientId);
+            includeClinicalDetails = true;
+        } else if (actor.isDentist()) {
+            appointments = appointmentRepository
+                    .findByPatientIdAndDentistIdOrderByAppointmentDateDescStartTimeDesc(
+                            patientId,
+                            actor.userId());
+            includeClinicalDetails = true;
+        } else if (actor.isClinicStaff()) {
+            appointments = appointmentRepository
+                    .findByPatientIdAndClinicIdOrderByAppointmentDateDescStartTimeDesc(
+                            patientId,
+                            actor.requiredClinicId());
+            includeClinicalDetails = false;
+        } else {
+            throw new AccessDeniedException("Appointment access is denied");
+        }
+        return mapResponses(appointments, includeClinicalDetails);
     }
-    
+
     @Transactional(readOnly = true)
-    public List<AppointmentResponse> getClinicAppointments(Long clinicId, LocalDate date) {
+    public List<AppointmentResponse> getDentistAppointments(
+            Long dentistId,
+            LocalDate date,
+            AppointmentActor actor) {
+        List<Appointment> appointments;
+        boolean includeClinicalDetails;
+        if (actor.isSystemAdmin()) {
+            appointments = appointmentRepository
+                    .findByDentistIdAndAppointmentDateOrderByStartTime(dentistId, date);
+            includeClinicalDetails = true;
+        } else if (actor.isDentist()) {
+            if (actor.userId() != dentistId) {
+                throw new AppointmentNotFoundException();
+            }
+            appointments = appointmentRepository
+                    .findByDentistIdAndAppointmentDateOrderByStartTime(dentistId, date);
+            includeClinicalDetails = true;
+        } else if (actor.isClinicStaff()) {
+            appointments = appointmentRepository
+                    .findByDentistIdAndClinicIdAndAppointmentDateOrderByStartTime(
+                            dentistId,
+                            actor.requiredClinicId(),
+                            date);
+            includeClinicalDetails = false;
+        } else {
+            throw new AccessDeniedException("Appointment access is denied");
+        }
+        return mapResponses(appointments, includeClinicalDetails);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AppointmentResponse> getClinicAppointments(
+            Long clinicId,
+            LocalDate date,
+            AppointmentActor actor) {
+        if (!actor.isSystemAdmin() && actor.requiredClinicId() != clinicId) {
+            throw new AppointmentNotFoundException();
+        }
         List<Appointment> appointments = appointmentRepository
                 .findByClinicIdAndAppointmentDateOrderByStartTime(clinicId, date);
-        return appointments.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    // Additional methods for inter-service communication
-    @Transactional(readOnly = true)
-    public List<AppointmentResponse> getLastCompletedAppointmentByPatientAndClinic(Long patientId, Long clinicId, LocalDate currentDate) {
-        List<Appointment> appointments = appointmentRepository
-                .findLastCompletedAppointmentByPatientAndClinic(patientId, clinicId, currentDate);
-        return appointments.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    @Transactional(readOnly = true)
-    public List<AppointmentResponse> getNextUpcomingAppointmentByPatientAndClinic(Long patientId, Long clinicId, LocalDate currentDate, LocalTime currentTime) {
-        List<Appointment> appointments = appointmentRepository
-                .findNextUpcomingAppointmentByPatientAndClinic(patientId, clinicId, currentDate, currentTime);
-        return appointments.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    @Transactional(readOnly = true)
-    public List<Long> getDistinctPatientIdsByClinicId(Long clinicId) {
-        return appointmentRepository.findDistinctPatientIdsByClinicId(clinicId);
+        return mapResponses(appointments, actor.isSystemAdmin());
     }
 
     @Transactional(readOnly = true)
-    public List<AvailableSlotResponse> getAvailableSlots(Long dentistId,
-                                                          Long clinicId,
-                                                          LocalDate date,
-                                                          Integer serviceDurationMinutes) {
-        // Get dentist's availability for the date
+    public List<AvailableSlotResponse> getAvailableSlots(
+            Long dentistId,
+            Long clinicId,
+            LocalDate date,
+            Integer serviceId,
+            Integer serviceDurationMinutes,
+            AppointmentActor actor) {
+        if (!actor.isSystemAdmin()
+                && (actor.isDentist() || actor.isClinicStaff())
+                && actor.requiredClinicId() != clinicId) {
+            throw new AppointmentNotFoundException();
+        }
+        ServiceResponse service = validateService(serviceId, clinicId);
+        int slotDurationMinutes = service == null
+                ? requireServicelessAppointmentDuration(serviceDurationMinutes)
+                : requireValidSlotDuration(service.getDurationMinutes());
+        if (date.isBefore(LocalDate.now())) {
+            throw new InvalidAppointmentRequestException(
+                    "Appointment date must not be in the past");
+        }
+
         List<DentistAvailability> availabilities = availabilityRepository
                 .findAvailableSlots(dentistId, clinicId, date);
-
-        // Get existing appointments for the dentist on that date
+        if (availabilities.isEmpty()) {
+            return List.of();
+        }
         List<Appointment> existingAppointments = appointmentRepository
-                .findByDentistIdAndAppointmentDateOrderByStartTime(dentistId, date);
-
+                .findSlotBlockingAppointments(
+                        dentistId,
+                        date,
+                        NON_BLOCKING_STATUSES);
         List<AvailableSlotResponse> availableSlots = new ArrayList<>();
-
+        LocalDateTime now = LocalDateTime.now();
         for (DentistAvailability availability : availabilities) {
-            LocalTime currentTime = availability.getStartTime();
-            LocalTime endTime = availability.getEndTime();
-
-            while (currentTime.plusMinutes(serviceDurationMinutes).isBefore(endTime) ||
-                   currentTime.plusMinutes(serviceDurationMinutes).equals(endTime)) {
-
+            LocalTime availabilityStart = availability.getStartTime();
+            LocalTime availabilityEnd = availability.getEndTime();
+            if (availabilityStart == null
+                    || availabilityEnd == null
+                    || !availabilityStart.isBefore(availabilityEnd)) {
+                continue;
+            }
+            LocalTime currentTime = availabilityStart;
+            while (Duration.between(currentTime, availabilityEnd).toMinutes()
+                    >= slotDurationMinutes) {
                 LocalTime slotStartTime = currentTime;
-                LocalTime slotEndTime = currentTime.plusMinutes(serviceDurationMinutes);
-
-                // Check if this slot conflicts with any existing appointment
-                boolean isAvailable = existingAppointments.stream()
-                        .noneMatch(apt -> doesTimeOverlap(
-                                slotStartTime, slotEndTime,
-                                apt.getStartTime(), apt.getEndTime()
-                        ));
-
-                if (isAvailable) {
+                LocalTime slotEndTime = currentTime.plusMinutes(
+                        slotDurationMinutes);
+                boolean future = LocalDateTime.of(date, slotStartTime)
+                        .isAfter(now);
+                boolean available = future && existingAppointments.stream()
+                        .noneMatch(appointment -> doesTimeOverlap(
+                                slotStartTime,
+                                slotEndTime,
+                                appointment.getStartTime(),
+                                appointment.getEndTime()));
+                if (available) {
                     availableSlots.add(AvailableSlotResponse.builder()
                             .date(date)
                             .startTime(slotStartTime)
@@ -258,110 +402,406 @@ public class AppointmentService {
                             .available(true)
                             .build());
                 }
-
-                currentTime = currentTime.plusMinutes(15); // 15-minute increments
+                currentTime = currentTime.plusMinutes(15);
             }
         }
-
         return availableSlots;
     }
 
-    @Transactional
-    public AppointmentResponse completeAppointment(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
-
-        if (appointment.getStatus() != AppointmentStatus.CONFIRMED) {
-            throw new IllegalStateException("Only confirmed appointments can be completed");
+    @Transactional(readOnly = true)
+    public List<AppointmentResponse> getLastCompletedAppointmentByPatientAndClinic(
+            Long patientId,
+            Long clinicId,
+            LocalDate currentDate,
+            AppointmentActor actor) {
+        List<Appointment> appointments;
+        boolean includeClinicalDetails;
+        if (actor.isSystemAdmin()) {
+            appointments = appointmentRepository
+                    .findLastCompletedAppointmentByPatientAndClinic(
+                            patientId,
+                            clinicId,
+                            currentDate);
+            includeClinicalDetails = true;
+        } else if (actor.isPatient()) {
+            requirePatientAndClinicScope(patientId, clinicId, actor);
+            appointments = appointmentRepository
+                    .findLastCompletedAppointmentByPatientAndClinic(
+                            patientId,
+                            clinicId,
+                            currentDate);
+            includeClinicalDetails = true;
+        } else if (actor.isDentist()) {
+            requireClinicScope(clinicId, actor);
+            appointments = appointmentRepository
+                    .findLastCompletedAppointmentByPatientClinicAndDentist(
+                            patientId,
+                            clinicId,
+                            actor.userId(),
+                            currentDate);
+            includeClinicalDetails = true;
+        } else if (actor.isClinicStaff()) {
+            requireClinicScope(clinicId, actor);
+            appointments = appointmentRepository
+                    .findLastCompletedAppointmentByPatientAndClinic(
+                            patientId,
+                            clinicId,
+                            currentDate);
+            includeClinicalDetails = false;
+        } else {
+            throw new AccessDeniedException("Appointment access is denied");
         }
-
-        Appointment saved = appointmentRepository.updateStatusOnlyWithCasting(
-                appointmentId,
-                AppointmentStatus.COMPLETED.name()
-        );
-
-        return toResponse(saved);
+        return mapResponses(appointments, includeClinicalDetails);
     }
 
-    @Transactional
-    public AppointmentResponse markNoShow(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
-
-        Appointment saved = appointmentRepository.updateStatusOnlyWithCasting(
-                appointmentId,
-                AppointmentStatus.NO_SHOW.name()
-        );
-
-        return toResponse(saved);
+    @Transactional(readOnly = true)
+    public List<AppointmentResponse> getNextUpcomingAppointmentByPatientAndClinic(
+            Long patientId,
+            Long clinicId,
+            LocalDate currentDate,
+            LocalTime currentTime,
+            AppointmentActor actor) {
+        List<Appointment> appointments;
+        boolean includeClinicalDetails;
+        if (actor.isSystemAdmin()) {
+            appointments = appointmentRepository
+                    .findNextUpcomingAppointmentByPatientAndClinic(
+                            patientId,
+                            clinicId,
+                            currentDate,
+                            currentTime);
+            includeClinicalDetails = true;
+        } else if (actor.isPatient()) {
+            requirePatientAndClinicScope(patientId, clinicId, actor);
+            appointments = appointmentRepository
+                    .findNextUpcomingAppointmentByPatientAndClinic(
+                            patientId,
+                            clinicId,
+                            currentDate,
+                            currentTime);
+            includeClinicalDetails = true;
+        } else if (actor.isDentist()) {
+            requireClinicScope(clinicId, actor);
+            appointments = appointmentRepository
+                    .findNextUpcomingAppointmentByPatientClinicAndDentist(
+                            patientId,
+                            clinicId,
+                            actor.userId(),
+                            currentDate,
+                            currentTime);
+            includeClinicalDetails = true;
+        } else if (actor.isClinicStaff()) {
+            requireClinicScope(clinicId, actor);
+            appointments = appointmentRepository
+                    .findNextUpcomingAppointmentByPatientAndClinic(
+                            patientId,
+                            clinicId,
+                            currentDate,
+                            currentTime);
+            includeClinicalDetails = false;
+        } else {
+            throw new AccessDeniedException("Appointment access is denied");
+        }
+        return mapResponses(appointments, includeClinicalDetails);
     }
 
-    private AppointmentResponse toResponse(Appointment appointment) {
-        AppointmentResponse response = AppointmentResponse.builder()
-                .id(appointment.getId())
-                .patientId(appointment.getPatientId())
-                .dentistId(appointment.getDentistId())
-                .clinicId(appointment.getClinicId())
-                .serviceId(appointment.getServiceId())
-                .appointmentDate(appointment.getAppointmentDate())
-                .startTime(appointment.getStartTime())
-                .endTime(appointment.getEndTime())
-                .status(appointment.getStatus().toString())
-                .reasonForVisit(appointment.getReasonForVisit())
-                .symptoms(appointment.getSymptoms())
-                .urgencyLevel(appointment.getUrgency().toString())
-                .aiTriageNotes(appointment.getAiTriageNotes())
-                .notes(appointment.getNotes())
-                .createdBy(appointment.getCreatedBy())
-                .confirmedBy(appointment.getConfirmedBy())
-                .cancelledBy(appointment.getCancelledBy())
-                .cancellationReason(appointment.getCancellationReason())
-                .createdAt(appointment.getCreatedAt())
-                .updatedAt(appointment.getUpdatedAt())
-                .build();
-
-        // Fetch names from user service
-        try {
-            response.setPatientName(authServiceClient.getUserFullName(appointment.getPatientId()));
-        } catch (Exception e) {
-            log.warn("Failed to fetch patient name for id {}: {}", appointment.getPatientId(), e.getMessage());
-            response.setPatientName("Patient " + appointment.getPatientId());
+    @Transactional(readOnly = true)
+    public List<Long> getDistinctPatientIdsByClinicId(
+            Long clinicId,
+            AppointmentActor actor) {
+        if (!actor.isSystemAdmin()) {
+            requireClinicScope(clinicId, actor);
         }
+        return appointmentRepository.findDistinctPatientIdsByClinicId(clinicId);
+    }
 
-        try {
-            response.setDentistName(authServiceClient.getUserFullName(appointment.getDentistId()));
-        } catch (Exception e) {
-            log.warn("Failed to fetch dentist name for id {}: {}", appointment.getDentistId(), e.getMessage());
-            response.setDentistName("Dr. Dentist " + appointment.getDentistId());
+    private long resolveCreatePatient(
+            AppointmentRequest request,
+            AppointmentActor actor) {
+        if (actor.isSystemAdmin()) {
+            if (request.getPatientId() == null || request.getPatientId() <= 0) {
+                throw new InvalidAppointmentRequestException(
+                        "Patient ID is required");
+            }
+            return request.getPatientId();
         }
+        if (!actor.isPatient()) {
+            throw new AccessDeniedException("Appointment creation is denied");
+        }
+        if (request.getPatientId() != null
+                && request.getPatientId() != actor.userId()) {
+            throw new AccessDeniedException("Appointment creation is denied");
+        }
+        return actor.userId();
+    }
 
-        // Fetch clinic name
-        if (appointment.getClinicId() != null) {
-            try {
-                var clinicResponse = clinicServiceClient.getClinic(appointment.getClinicId());
-                if (clinicResponse.isSuccess() && clinicResponse.getDataObject() != null) {
-                    response.setClinicName(clinicResponse.getDataObject().getName());
-                }
-            } catch (Exception e) {
-                log.warn("Failed to fetch clinic name for id {}: {}", appointment.getClinicId(), e.getMessage());
-                response.setClinicName("Clinic " + appointment.getClinicId());
+    private Appointment findAuthorizedAppointment(
+            Long appointmentId,
+            AppointmentActor actor,
+            boolean allowPatient,
+            boolean allowDentist,
+            boolean allowClinicStaff) {
+        if (actor.isSystemAdmin()) {
+            return appointmentRepository.findById(appointmentId)
+                    .orElseThrow(AppointmentNotFoundException::new);
+        }
+        boolean hasAllowedRole = false;
+        if (allowPatient && actor.isPatient()) {
+            hasAllowedRole = true;
+            Appointment appointment = appointmentRepository
+                    .findByIdAndPatientId(appointmentId, actor.userId())
+                    .orElse(null);
+            if (appointment != null) {
+                return appointment;
             }
         }
+        if (allowDentist && actor.isDentist()) {
+            hasAllowedRole = true;
+            Appointment appointment = appointmentRepository
+                    .findByIdAndDentistId(appointmentId, actor.userId())
+                    .orElse(null);
+            if (appointment != null) {
+                return appointment;
+            }
+        }
+        if (allowClinicStaff && actor.isClinicStaff()) {
+            hasAllowedRole = true;
+            Appointment appointment = appointmentRepository
+                    .findByIdAndClinicId(appointmentId, actor.requiredClinicId())
+                    .orElse(null);
+            if (appointment != null) {
+                return appointment;
+            }
+        }
+        if (hasAllowedRole) {
+            throw new AppointmentNotFoundException();
+        }
+        throw new AccessDeniedException("Appointment access is denied");
+    }
 
-        // Fetch service name
+    private void requireDentistAvailability(
+            Long dentistId,
+            Long clinicId,
+            LocalDate date,
+            LocalTime startTime,
+            LocalTime endTime) {
+        boolean covered = availabilityRepository.findAvailableSlots(
+                        dentistId,
+                        clinicId,
+                        date)
+                .stream()
+                .anyMatch(availability -> !startTime.isBefore(availability.getStartTime())
+                        && !endTime.isAfter(availability.getEndTime()));
+        if (!covered) {
+            throw new InvalidAppointmentRequestException(
+                    "The dentist is unavailable for the requested time");
+        }
+    }
+
+    private ServiceResponse validateService(Integer serviceId, Long clinicId) {
+        if (serviceId == null) {
+            return null;
+        }
+        ApiResponse<ServiceResponse> response;
+        try {
+            response = clinicServiceClient.getService(serviceId);
+        } catch (FeignException.NotFound exception) {
+            throw new InvalidAppointmentRequestException(
+                    "The selected service is unavailable at this clinic");
+        } catch (Exception exception) {
+            throw new AppointmentDependencyUnavailableException(exception);
+        }
+        if (response == null
+                || !response.isSuccess()
+                || response.getDataObject() == null
+                || response.getDataObject().getClinicId() == null
+                || response.getDataObject().getIsActive() == null) {
+            throw new AppointmentDependencyUnavailableException();
+        }
+        ServiceResponse service = response.getDataObject();
+        if (!service.getClinicId().equals(clinicId)
+                || !Boolean.TRUE.equals(service.getIsActive())) {
+            throw new InvalidAppointmentRequestException(
+                    "The selected service is unavailable at this clinic");
+        }
+        requireValidSlotDuration(service.getDurationMinutes());
+        return service;
+    }
+
+    private int requireValidSlotDuration(Integer durationMinutes) {
+        if (durationMinutes == null
+                || durationMinutes <= 0
+                || durationMinutes > MAX_SLOT_DURATION_MINUTES) {
+            throw new InvalidAppointmentRequestException(
+                    "Service duration is invalid");
+        }
+        return durationMinutes;
+    }
+
+    private int requireServicelessAppointmentDuration(Integer durationMinutes) {
+        int validatedDuration = requireValidSlotDuration(durationMinutes);
+        if (validatedDuration != DEFAULT_SERVICELESS_APPOINTMENT_DURATION_MINUTES) {
+            throw new InvalidAppointmentRequestException(
+                    "Appointments without a selected service must be 30 minutes");
+        }
+        return validatedDuration;
+    }
+
+    private void requireServiceDuration(
+            ServiceResponse service,
+            LocalTime startTime,
+            LocalTime endTime) {
+        int expectedDurationMinutes = service == null
+                ? DEFAULT_SERVICELESS_APPOINTMENT_DURATION_MINUTES
+                : requireValidSlotDuration(service.getDurationMinutes());
+        Duration requestedDuration = Duration.between(startTime, endTime);
+        if (!requestedDuration.equals(Duration.ofMinutes(expectedDurationMinutes))) {
+            throw new InvalidAppointmentRequestException(service == null
+                    ? "Appointments without a selected service must be 30 minutes"
+                    : "Appointment duration must match the selected service");
+        }
+    }
+
+    private void requireFutureStart(LocalDate date, LocalTime startTime) {
+        if (!LocalDateTime.of(date, startTime).isAfter(LocalDateTime.now())) {
+            throw new InvalidAppointmentRequestException(
+                    "The appointment must be scheduled in the future");
+        }
+    }
+
+    private void validateTimeRange(
+            LocalDate date,
+            LocalTime startTime,
+            LocalTime endTime) {
+        if (date == null || startTime == null || endTime == null
+                || !startTime.isBefore(endTime)) {
+            throw new InvalidAppointmentRequestException(
+                    "Appointment time range is invalid");
+        }
+    }
+
+    private Appointment runTransition(
+            Supplier<Appointment> transition,
+            String conflictMessage) {
+        try {
+            Appointment appointment = transition.get();
+            if (appointment == null) {
+                throw new AppointmentConflictException(conflictMessage);
+            }
+            return appointment;
+        } catch (EmptyResultDataAccessException exception) {
+            throw new AppointmentConflictException(conflictMessage);
+        }
+    }
+
+    private void requirePatientAndClinicScope(
+            Long patientId,
+            Long clinicId,
+            AppointmentActor actor) {
+        if (actor.userId() != patientId) {
+            throw new AppointmentNotFoundException();
+        }
+        if (actor.clinicId() != null && actor.clinicId() != clinicId) {
+            throw new AppointmentNotFoundException();
+        }
+    }
+
+    private void requireClinicScope(Long clinicId, AppointmentActor actor) {
+        if (actor.requiredClinicId() != clinicId) {
+            throw new AppointmentNotFoundException();
+        }
+    }
+
+    private boolean mayViewClinicalDetails(
+            Appointment appointment,
+            AppointmentActor actor) {
+        return actor.isSystemAdmin()
+                || (actor.isPatient() && actor.userId() == appointment.getPatientId())
+                || (actor.isDentist() && actor.userId() == appointment.getDentistId());
+    }
+
+    private List<AppointmentResponse> mapResponses(
+            List<Appointment> appointments,
+            boolean includeClinicalDetails) {
+        return appointments.stream()
+                .map(appointment -> toResponse(
+                        appointment,
+                        includeClinicalDetails))
+                .toList();
+    }
+
+    private AppointmentResponse toResponse(
+            Appointment appointment,
+            boolean includeClinicalDetails) {
+        AppointmentResponse.AppointmentResponseBuilder responseBuilder =
+                AppointmentResponse.builder()
+                        .id(appointment.getId())
+                        .patientId(appointment.getPatientId())
+                        .dentistId(appointment.getDentistId())
+                        .clinicId(appointment.getClinicId())
+                        .serviceId(appointment.getServiceId())
+                        .appointmentDate(appointment.getAppointmentDate())
+                        .startTime(appointment.getStartTime())
+                        .endTime(appointment.getEndTime())
+                        .status(appointment.getStatus().name())
+                        .createdAt(appointment.getCreatedAt())
+                        .updatedAt(appointment.getUpdatedAt());
+        if (includeClinicalDetails) {
+            responseBuilder.reasonForVisit(appointment.getReasonForVisit())
+                    .symptoms(appointment.getSymptoms())
+                    .urgencyLevel(appointment.getUrgency().name())
+                    .aiTriageNotes(appointment.getAiTriageNotes())
+                    .notes(appointment.getNotes())
+                    .createdBy(appointment.getCreatedBy())
+                    .confirmedBy(appointment.getConfirmedBy())
+                    .cancelledBy(appointment.getCancelledBy())
+                    .cancellationReason(appointment.getCancellationReason());
+        }
+        AppointmentResponse response = responseBuilder.build();
+        enrichDisplayNames(appointment, response);
+        return response;
+    }
+
+    private void enrichDisplayNames(
+            Appointment appointment,
+            AppointmentResponse response) {
+        try {
+            response.setPatientName(userProfileServiceClient.getUserFullName(
+                    appointment.getPatientId()));
+        } catch (Exception exception) {
+            response.setPatientName("Patient " + appointment.getPatientId());
+        }
+        try {
+            response.setDentistName(userProfileServiceClient.getUserFullName(
+                    appointment.getDentistId()));
+        } catch (Exception exception) {
+            response.setDentistName("Dr. Dentist " + appointment.getDentistId());
+        }
+        try {
+            var clinicResponse = clinicServiceClient.getClinic(
+                    appointment.getClinicId());
+            if (clinicResponse != null
+                    && clinicResponse.isSuccess()
+                    && clinicResponse.getDataObject() != null) {
+                response.setClinicName(clinicResponse.getDataObject().getName());
+            }
+        } catch (Exception exception) {
+            response.setClinicName("Clinic " + appointment.getClinicId());
+        }
         if (appointment.getServiceId() != null) {
             try {
-                var serviceResponse = clinicServiceClient.getService(appointment.getServiceId());
-                if (serviceResponse.isSuccess() && serviceResponse.getDataObject() != null) {
-                    response.setServiceName(serviceResponse.getDataObject().getName());
+                var serviceResponse = clinicServiceClient.getService(
+                        appointment.getServiceId());
+                if (serviceResponse != null
+                        && serviceResponse.isSuccess()
+                        && serviceResponse.getDataObject() != null) {
+                    response.setServiceName(
+                            serviceResponse.getDataObject().getName());
                 }
-            } catch (Exception e) {
-                log.warn("Failed to fetch service name for id {}: {}", appointment.getServiceId(), e.getMessage());
+            } catch (Exception exception) {
                 response.setServiceName("Service " + appointment.getServiceId());
             }
         }
-
-        return response;
     }
 
     private UrgencyLevel parseUrgencyLevel(String level) {
@@ -370,50 +810,64 @@ public class AppointmentService {
         }
         try {
             return UrgencyLevel.valueOf(level.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            return UrgencyLevel.ROUTINE;
+        } catch (IllegalArgumentException exception) {
+            throw new InvalidAppointmentRequestException(
+                    "Urgency level is invalid");
         }
     }
 
-    private boolean doesTimeOverlap(LocalTime start1, LocalTime end1,
-                                     LocalTime start2, LocalTime end2) {
-        return (start1.isBefore(end2) && end1.isAfter(start2));
+    private boolean doesTimeOverlap(
+            LocalTime start1,
+            LocalTime end1,
+            LocalTime start2,
+            LocalTime end2) {
+        return start1.isBefore(end2) && end1.isAfter(start2);
     }
 
-    private void sendAppointmentNotification(Appointment appointment, String templateName) {
+    private void sendCancellationNotification(
+            Appointment appointment,
+            String reason) {
         Map<String, Object> notificationRequest = new HashMap<>();
         notificationRequest.put("userId", appointment.getPatientId());
-        notificationRequest.put("templateName", templateName);
         notificationRequest.put("type", "EMAIL");
-
-        Map<String, String> templateVariables = new HashMap<>();
-
-        // Fetch actual names from auth service
-        try {
-            String patientName = authServiceClient.getUserFullName(appointment.getPatientId());
-            templateVariables.put("patient_name", patientName);
-        } catch (Exception e) {
-            log.warn("Failed to fetch patient name for notification: {}", e.getMessage());
-            templateVariables.put("patient_name", "Patient");
+        notificationRequest.put("subject", "Your appointment has been cancelled");
+        String body = "Your appointment on " + appointment.getAppointmentDate()
+                + " has been cancelled.";
+        if (reason != null && !reason.isBlank()) {
+            body = body + " Reason: " + reason;
         }
-
-        try {
-            String dentistName = authServiceClient.getUserFullName(appointment.getDentistId());
-            templateVariables.put("dentist_name", dentistName);
-        } catch (Exception e) {
-            log.warn("Failed to fetch dentist name for notification: {}", e.getMessage());
-            templateVariables.put("dentist_name", "Dr. Dentist");
-        }
-
-        templateVariables.put("appointment_date", appointment.getAppointmentDate().toString());
-        templateVariables.put("appointment_time", appointment.getStartTime().toString());
-
-        notificationRequest.put("templateVariables", templateVariables);
-
+        notificationRequest.put("body", body);
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("appointment_id", appointment.getId());
         notificationRequest.put("metadata", metadata);
+        notificationClient.sendNotification(notificationRequest);
+    }
 
+    private void sendAppointmentNotification(Appointment appointment) {
+        String patientName = "Patient";
+        try {
+            patientName = userProfileServiceClient.getUserFullName(appointment.getPatientId());
+        } catch (Exception exception) {
+            // Best-effort enrichment; fall back to a generic salutation.
+        }
+        String dentistName = "Dr. Dentist";
+        try {
+            dentistName = userProfileServiceClient.getUserFullName(appointment.getDentistId());
+        } catch (Exception exception) {
+            // Best-effort enrichment; fall back to a generic salutation.
+        }
+        Map<String, Object> notificationRequest = new HashMap<>();
+        notificationRequest.put("userId", appointment.getPatientId());
+        notificationRequest.put("type", "EMAIL");
+        notificationRequest.put("subject", "Your appointment is confirmed");
+        notificationRequest.put(
+                "body",
+                "Hello " + patientName + ", your appointment with " + dentistName
+                        + " on " + appointment.getAppointmentDate()
+                        + " at " + appointment.getStartTime() + " is confirmed.");
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("appointment_id", appointment.getId());
+        notificationRequest.put("metadata", metadata);
         notificationClient.sendNotification(notificationRequest);
     }
 }

@@ -29,6 +29,8 @@ public class UserPrincipal implements UserDetails {
     private String lastName;
     private Collection<? extends GrantedAuthority> authorities;
     private Long clinicId;
+    private long securityVersion;
+    private String sessionFamilyId;
     private boolean enabled;
     private boolean accountNonExpired;
     private boolean credentialsNonExpired;
@@ -47,6 +49,7 @@ public class UserPrincipal implements UserDetails {
                 .lastName(user.getLastName())
                 .authorities(authorities)
                 .clinicId(user.getClinicId())
+                .securityVersion(user.getSecurityVersion())
                 .enabled(user.isEnabled())
                 .accountNonExpired(user.isAccountNonExpired())
                 .credentialsNonExpired(user.isCredentialsNonExpired())

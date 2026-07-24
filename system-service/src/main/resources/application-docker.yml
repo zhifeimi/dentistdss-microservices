@@ -14,7 +14,7 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -25,6 +25,10 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
+
+jwt:
+  issuer: ${JWT_ISSUER:http://api-gateway:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
 
 eureka:
   client:
@@ -41,7 +45,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues

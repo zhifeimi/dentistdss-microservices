@@ -72,6 +72,28 @@ services:
       - no-new-privileges:true
     stop_grace_period: 60s
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    # $$ keeps the password out of the interpolated Compose command line;
+    # the shell inside the container expands it from its own environment.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$${REDIS_PASSWORD}\" --appendonly yes --dir /data"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
   config-server:
     <<: *spring-service
     image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-config-server:${BACKEND_IMAGE_TAG:-latest}
@@ -116,11 +138,20 @@ services:
     depends_on:
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SERVER_PORT: "8080"
       SERVER_SSL_ENABLED: "false"
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      ANONYMOUS_SESSION_FINGERPRINT_KEY: ${ANONYMOUS_SESSION_FINGERPRINT_KEY:?ANONYMOUS_SESSION_FINGERPRINT_KEY is required}
+      GENAI_SERVICE_AUTH_PRIVATE_KEY: ${GENAI_SERVICE_AUTH_PRIVATE_KEY:-}
+      GENAI_SERVICE_AUTH_PUBLIC_KEY: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:-}
+      GENAI_SERVICE_AUTH_KEY_ID: ${GENAI_SERVICE_AUTH_KEY_ID:-}
     ports:
       - ${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8080}:8080
     healthcheck:
@@ -138,6 +169,8 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - backend
       - egress
@@ -148,8 +181,14 @@ services:
       JWT_RSA_PRIVATE_KEY: ${JWT_RSA_PRIVATE_KEY:?JWT_RSA_PRIVATE_KEY is required}
       JWT_RSA_PUBLIC_KEY: ${JWT_RSA_PUBLIC_KEY:?JWT_RSA_PUBLIC_KEY is required}
       JWT_RSA_KEY_ID: ${JWT_RSA_KEY_ID:-dentistdss-homelab-1}
+      SERVICE_AUTH_PRIVATE_KEY: ${AUTH_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${AUTH_SERVICE_AUTH_KEY_ID:-auth-service-1}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
+      EMAIL_VERIFICATION_CODE_PEPPER: ${EMAIL_VERIFICATION_CODE_PEPPER:?EMAIL_VERIFICATION_CODE_PEPPER is required}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       MAIL_HOST: ${MAIL_HOST:?MAIL_HOST is required}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
@@ -173,10 +212,16 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8083/actuator/health >/dev/null"]
       interval: 15s
@@ -194,11 +239,18 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SERVICE_AUTH_PUBLIC_KEY_NOTIFICATION: ${SERVICE_AUTH_PUBLIC_KEY_NOTIFICATION:-}
+      SERVICE_AUTH_KEY_ID_NOTIFICATION: ${SERVICE_AUTH_KEY_ID_NOTIFICATION:-notification-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8085/actuator/health >/dev/null"]
       interval: 15s
@@ -248,6 +300,14 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
       MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
       BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      SERVICE_AUTH_PRIVATE_KEY: ${NOTIFICATION_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${NOTIFICATION_SERVICE_AUTH_KEY_ID:-notification-service-1}
+      SERVICE_AUTH_PUBLIC_KEY_AUTH: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:-}
+      SERVICE_AUTH_KEY_ID_AUTH: ${SERVICE_AUTH_KEY_ID_AUTH:-auth-service-1}
+      SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT: ${SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT:-}
+      SERVICE_AUTH_KEY_ID_APPOINTMENT: ${SERVICE_AUTH_KEY_ID_APPOINTMENT:-appointment-service-1}
+      SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS: ${SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS:-}
+      SERVICE_AUTH_KEY_ID_CLINICALRECORDS: ${SERVICE_AUTH_KEY_ID_CLINICALRECORDS:-clinical-records-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8088/actuator/health >/dev/null"]
       interval: 15s
@@ -267,11 +327,18 @@ services:
         condition: service_healthy
       user-profile-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SERVICE_AUTH_PRIVATE_KEY: ${APPOINTMENT_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${APPOINTMENT_SERVICE_AUTH_KEY_ID:-appointment-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8089/actuator/health >/dev/null"]
       interval: 15s
@@ -289,13 +356,20 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss_files?authSource=admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SERVICE_AUTH_PRIVATE_KEY: ${CLINICAL_RECORDS_SERVICE_AUTH_PRIVATE_KEY:-}
+      SERVICE_AUTH_KEY_ID: ${CLINICAL_RECORDS_SERVICE_AUTH_KEY_ID:-clinical-records-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8090/actuator/health >/dev/null"]
       interval: 15s
@@ -316,6 +390,8 @@ services:
       SPRING_DATA_MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss?authSource=admin
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
+      SERVICE_AUTH_PUBLIC_KEY_AUTH: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:-}
+      SERVICE_AUTH_KEY_ID_AUTH: ${SERVICE_AUTH_KEY_ID_AUTH:-auth-service-1}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8087/actuator/health >/dev/null"]
       interval: 15s
@@ -347,16 +423,23 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - backend
       - egress
     environment:
       <<: *spring-environment
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       VERTEX_AI_ENABLED: "true"
       VERTEX_AI_PROJECT_ID: ${VERTEX_AI_PROJECT_ID:-}
       VERTEX_AI_LOCATION: ${VERTEX_AI_LOCATION:-australia-southeast1}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GENAI_SERVICE_AUTH_PUBLIC_KEY: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:-}
+      GENAI_SERVICE_AUTH_KEY_ID: ${GENAI_SERVICE_AUTH_KEY_ID:-}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-service-account.json
     volumes:
       - ${GCP_CREDENTIALS_PATH:-./secrets/gcp-service-account.json}:/run/secrets/gcp-service-account.json:ro
@@ -370,6 +453,7 @@ services:
 volumes:
   postgres_data:
   mongo_data:
+  redis_data:
 
 networks:
   backend:

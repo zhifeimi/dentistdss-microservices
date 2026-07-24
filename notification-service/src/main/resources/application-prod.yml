@@ -6,6 +6,11 @@ spring:
     name: notification-service
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
 
   datasource:
     url: jdbc:postgresql://postgres:5432/dentistdss
@@ -14,7 +19,7 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -32,6 +37,11 @@ spring:
           auth: true
           starttls:
             enable: true
+            required: true
+
+jwt:
+  issuer: ${JWT_ISSUER:https://api.mizhifei.press}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
 
 # OpenAPI/SpringDoc Configuration - DISABLED for production
 springdoc:
@@ -47,8 +57,6 @@ eureka:
   instance:
     preferIpAddress: false
 
-logging:
-
 # Management/Actuator Configuration
 management:
   endpoints:
@@ -61,6 +69,8 @@ management:
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues
+
+logging:
   level:
     press.mizhifei.dentist: INFO
     org.springframework: INFO
@@ -74,3 +84,28 @@ app:
     base-url: ${BASE_URL:https://dentist.mizhifei.press}
   email:
     from-email: ${MAIL_USERNAME}
+  security:
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: notification-service
+      audience: notification-service
+      trusted-keys:
+        auth:
+          key-id: ${SERVICE_AUTH_KEY_ID_AUTH:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:}
+          subject: auth-service
+          scopes:
+            - notification:email
+        appointment:
+          key-id: ${SERVICE_AUTH_KEY_ID_APPOINTMENT:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT:}
+          subject: appointment-service
+          scopes:
+            - notification:send
+        clinicalrecords:
+          key-id: ${SERVICE_AUTH_KEY_ID_CLINICALRECORDS:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS:}
+          subject: clinical-records-service
+          scopes:
+            - notification:send
