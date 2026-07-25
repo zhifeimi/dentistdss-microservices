@@ -91,10 +91,13 @@ run green.
 
 ### SUPPLY-01 — done: CI security gates, manifest policy, DAST, digest pins
 
-Supply-chain gating landed on `agent/security-platform-hardening` (PR #22);
-the "Done" status becomes effective once PR #22's new `Security/*` checks and
-the extended `deployment-contract` job are green. The local contract is
-already proven: `./mvnw -Pprod,security -DskipTests -Ddependency-check.skip=true
+Supply-chain gating landed on `agent/security-platform-hardening` (PR #22)
+and is CI-verified: every gate went green at `7a5bb31` (Security run
+30136159582, Backend CI run 30136159594) — all 14 `Trivy config` matrix jobs,
+`Trivy filesystem`, `FindSecBugs + SBOM`, `Dependency review` (graceful
+skip-notice until the repo's dependency graph is enabled), `Maven verify`,
+and the extended `Validate deployment contract`. The local contract is
+proven as well: `./mvnw -Pprod,security -DskipTests -Ddependency-check.skip=true
 verify` is green across all 16 reactor modules, and the manifest-policy gate
 passes both environment renders and fails exactly 12 ways under a mutation
 battery (one deliberate break per assertion family).
