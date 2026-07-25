@@ -31,12 +31,14 @@ Create these KV v2 records:
 - `kv/apps/dentistdss/dev/service-auth/appointment`
 - `kv/apps/dentistdss/dev/service-auth/clinical-records`
 - `kv/apps/dentistdss/dev/service-auth/notification`
+- `kv/apps/dentistdss/dev/db-credentials/{auth,clinic,user-profile,appointment,clinical-records,notification,system,audit,genai}`
 - `kv/apps/dentistdss/prod/runtime`
 - `kv/apps/dentistdss/prod/genai-service-auth`
 - `kv/apps/dentistdss/prod/service-auth/auth`
 - `kv/apps/dentistdss/prod/service-auth/appointment`
 - `kv/apps/dentistdss/prod/service-auth/clinical-records`
 - `kv/apps/dentistdss/prod/service-auth/notification`
+- `kv/apps/dentistdss/prod/db-credentials/{auth,clinic,user-profile,appointment,clinical-records,notification,system,audit,genai}`
 
 Each environment requires a `vault-dentistdss-token` Secret in its application
 namespace. The token must have read access only to that environment's runtime
@@ -62,9 +64,11 @@ MAIL_HOST
 MAIL_PORT
 MAIL_USERNAME
 MAIL_PASSWORD
-SPRING_DATA_MONGODB_URI
-MONGODB_URI
 ```
+
+(DATA-02: the runtime record no longer carries `SPRING_DATA_MONGODB_URI` /
+`MONGODB_URI` — root-user URIs are retired; per-service Mongo URIs live in the
+`db-credentials/*` records below.)
 
 The chart never mounts the runtime record wholesale. `externalSecrets.records`
 in `values.yaml` maps each Kubernetes Secret name to the record properties it
@@ -112,6 +116,57 @@ stay dormant and target endpoints reject uncredentialed calls, as before):
 Use a single-line PKCS#8 private key and X.509 public key per pair, and a
 unique `SERVICE_AUTH_KEY_ID` per issuer. Do not reuse the JWT keys or the
 gateway-to-GenAI keys, and never add these values to the broad runtime record.
+
+Each `db-credentials/<service>` record holds that service's database
+credentials (DATA-02). JDBC services hold their PostgreSQL role name and
+password; the Mongo services hold their full per-service URI:
+
+```text
+db-credentials/auth|clinic|user-profile|appointment|notification|system:
+  DB_USERNAME        # svc_<name with underscores>
+  DB_PASSWORD
+db-credentials/clinical-records:
+  DB_USERNAME        # svc_clinical_records
+  DB_PASSWORD
+  MONGODB_URI        # mongodb://svc_clinical_records:<pw>@mongo:27017/dentistdss_files?authSource=admin
+db-credentials/audit:
+  SPRING_DATA_MONGODB_URI   # mongodb://svc_audit:<pw>@mongo:27017/dentistdss?authSource=admin
+db-credentials/genai:
+  SPRING_DATA_MONGODB_URI   # mongodb://svc_genai:<pw>@mongo:27017/dentistdss?authSource=admin
+```
+
+The chart renders one ExternalSecret per service from these records
+(`dentistdss-db-<svc>` ×7, `dentistdss-mongo-<svc>` ×3), consumed via
+`envFrom`. Application pods never see the PostgreSQL superuser or Mongo root
+credentials: the shared `dentistdss-postgres` Secret stays mounted on JDBC
+services only so Flyway can keep running DDL migrations as the migration
+owner (`spring.flyway.user`), and `dentistdss-mongo` is root-bootstrap-only
+for the Mongo StatefulSet. The Mongo URIs are themselves credentials — treat
+the `db-credentials/*` records with the same care as the runtime record.
+
+Rollout (per environment, in this order — pods fail fast until step 2 is
+done, by design):
+
+```bash
+# 1. Generate per-service passwords and write the db-credentials/* records.
+#    Deliberately separate from the runtime seeder: JWT keys and root
+#    passwords are NOT rotated by adopting per-service credentials.
+./deploy/scripts/seed-vault-db-credentials.sh dev   # or prod
+
+# 2. Apply the same passwords to the databases (idempotent; reads passwords
+#    from the environment, never from files — export them from Vault):
+#    PGPASSWORD=<superuser> AUTH_SERVICE_DB_PASSWORD=... (seven vars) \
+#      deploy/scripts/provision-db-roles.sh            # PostgreSQL roles
+#    MONGO_ADMIN_URI=mongodb://dentistdss:<root>@mongo:27017/admin \
+#      AUDIT_SERVICE_MONGO_PASSWORD=... GENAI_SERVICE_MONGO_PASSWORD=... \
+#      CLINICAL_RECORDS_SERVICE_MONGO_PASSWORD=... \
+#      deploy/scripts/provision-db-roles.sh            # MongoDB users
+#    (kubectl exec into the postgres/mongo pods works too — see the script
+#    header for both invocation styles.)
+
+# 3. Upgrade the chart. Flyway V3 (running as the owner) reconciles the
+#    role/grant matrix no-op; pods start with their per-service credentials.
+```
 
 Seed each runtime record interactively without printing credentials:
 

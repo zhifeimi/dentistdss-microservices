@@ -8,7 +8,7 @@ spring:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
 
   mongodb:
-    uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss?authSource=admin
+    uri: ${SPRING_DATA_MONGODB_URI}
     database: dentistdss
 
   security:

@@ -15,7 +15,7 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 | ADMIN-01 | Spring Boot Admin and management endpoints are public | Remove public route; private authenticated management plane; health-only public exposure | Public Admin/refresh/config/route inspection requests fail | In progress |
 | SECRET-01 | Every pod receives the complete runtime secret and JWT private key | Per-service ExternalSecrets; auth-only signing key | Rendered manifests show least-privilege secret references | In progress |
 | DATA-01 | Shared DB schema mutates through Hibernate | Versioned Flyway owner and `ddl-auto: validate` everywhere | Migration succeeds against baseline; all services validate | Partial (see notes) |
-| DATA-02 | Applications use shared/root database credentials | Per-service PostgreSQL and MongoDB users/grants | Unauthorized cross-database/table access fails | In progress |
+| DATA-02 | Applications use shared/root database credentials | Per-service PostgreSQL and MongoDB users/grants | Unauthorized cross-database/table access fails | Done (see notes) |
 | DATA-03 | Dental image writes and validation are unsafe | Signature/decode limits, canonical re-encode, authorized ownership, cleanup/compensation | False MIME, polyglot, oversized pixels, and unauthorized access fail | In progress |
 | AUDIT-01 | Audit actor is caller-controlled and critical actions are not integrated | Server-attributed internal ingest, transactional outbox, append-only/tamper-evident store | Caller cannot forge actor; critical mutations emit immutable events | Done (see notes) |
 | RATE-01 | Session and GenAI limiter maps are bypassable/unbounded | Redis-backed signed sessions, quotas, TTLs, and cardinality limits | Rotation, restart, and multi-replica tests pass without key leaks | In progress |
@@ -241,6 +241,72 @@ identify → parallel false-positive filtering → confidence ≥8 threshold.
   clinic field.
 - Gate-5 status: **no unresolved confirmed findings** — the single confirmed
   finding is closed as an explicitly accepted, documented limitation.
+
+### DATA-02 — done: per-service PostgreSQL and MongoDB credentials
+
+Every application service now authenticates to the databases with its own
+least-privilege credential; the shared PostgreSQL superuser and MongoDB root
+user are no longer consumed by any workload (they remain only on the
+StatefulSets for bootstrap, as the Flyway migration owner, and for operator
+backup). This is also the **compensating control for the audit tail-truncation
+limitation** recorded under AUDIT-01: genai-service and
+clinical-records-service previously held the Mongo root credential and could
+rewrite or drop `audit_seals`; with collection-scoped roles, only
+`svc_audit` can write the audit store.
+
+- **PostgreSQL roles** (`V3__service_roles.sql`, idempotent — roles created
+  without passwords, `GRANT`s re-runnable): `svc_auth` (users, user_roles,
+  clinics, clinic_admin, user_approval_requests, auth_sessions,
+  auth_audit_outbox, auth_security_outbox + user_id_seq), `svc_clinic`
+  (clinics, services), `svc_user_profile` (users, user_roles,
+  user_approval_requests, patients, patient_profiles, medical_history +
+  user_id_seq, patient_record_id_seq), `svc_appointment` (appointments,
+  dentist_availability + appointment_id_seq), `svc_clinical_records`
+  (clinical_notes, dental_images, service_visits, treatment_plans,
+  treatment_plan_items), `svc_notification` (notifications,
+  notification_templates + notification_id_seq), `svc_system`
+  (system_settings). The three shared tables (users, clinics,
+  user_approval_requests) are written by BOTH mapping services, so both
+  roles hold full DML on them — verified against repository write sites
+  (native queries never cross tables). Migration authoring rule: every
+  future table-creating migration must include its per-service GRANTs.
+- **MongoDB users** (provisioned by `deploy/scripts/provision-db-roles.sh`;
+  collection-scoped custom roles on db `dentistdss`): `svc_audit` →
+  audit_entries + audit_seals only; `svc_genai` → conversations +
+  prompt_templates + ai_interactions only; `svc_clinical_records` →
+  readWrite on the sole-tenant `dentistdss_files` (GridFS). Users
+  authenticate against `admin`, so only the user:password in the URIs
+  changed.
+- **Flyway owner (user decision 2026-07-25)**: the app datasource uses the
+  per-service role (`DB_USERNAME`/`DB_PASSWORD`); Flyway keeps connecting
+  as the migration owner via `spring.flyway.user`/`spring.flyway.password`
+  (`dentistdss`, from the existing `dentistdss-postgres` secret) so DDL
+  migrations keep working on boot. Residual, accepted: the owner credential
+  remains present in JDBC pod environments for Flyway — strictly less
+  exposure than today, where it is the runtime credential. Removing it from
+  app pods entirely (dedicated migrator Job / Helm hook) is a documented
+  follow-up.
+- **Delivery**: per-service Vault records `apps/dentistdss/<env>/
+  db-credentials/<service>` (seeded by
+  `deploy/scripts/seed-vault-db-credentials.sh` — deliberately separate from
+  the runtime-record seeder so adoption does not rotate JWT/root secrets),
+  rendered by the chart as per-service ExternalSecrets
+  (`dentistdss-db-<svc>` ×7, `dentistdss-mongo-<svc>` ×3) consumed via
+  `envFrom`. Compose wires the same per-service env; passwords are applied
+  to the databases by the idempotent `provision-db-roles.sh`. The legacy
+  root-URI keys were retired from the runtime record and the
+  `dentistdss-mongo` slice (now root-bootstrap only).
+- **Regression evidence**: `ServiceRoleContractTest` (migrates V1–V3, then
+  per role: own-table read OK, cross-service read → 42501
+  insufficient_privilege, shared-table writes OK for both writers,
+  non-owner write denied, sequence USAGE matrix, DDL denied) and
+  `MongoCredentialContractTest` (svc_genai denied on audit_entries /
+  audit_seals — the tail-truncation control — svc_audit confined to the
+  audit collections, svc_clinical_records confined to dentistdss_files),
+  both wired into CI against postgres and mongo service containers; the CI
+  mongo users are created by the real provision script. Rollout runbook
+  (seed → provision → upgrade; fail-closed until seeded) lives in
+  `deploy/chart/README.md` and `deploy/README.md`.
 
 ## Completion gates
 

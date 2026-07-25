@@ -86,6 +86,66 @@ spec:
         key: {{ printf "%s/%s" $serviceAuthPath $issuer | quote }}
         property: SERVICE_AUTH_KEY_ID
 {{- end }}
+{{- /*
+DATA-02: one Vault record per service under dbCredentialsPath holding that
+service's database credentials. JDBC services get DB_USERNAME/DB_PASSWORD
+(the app datasource uses the per-service least-privilege role; the shared
+dentistdss-postgres secret stays mounted for the Flyway migration owner).
+Mongo services get their full per-service URI from the same per-service
+record (clinical-records holds both its PG pair and its MONGODB_URI).
+Rendered unconditionally, like the service-auth secrets: until the records
+are seeded the ExternalSecrets sit in a sync-error state and the consuming
+pods fail fast on the missing env — fail-closed, per the rollout runbook.
+*/}}
+{{- $dbCredentialsPath := .Values.externalSecrets.dbCredentialsPath }}
+{{- range $svc := list "auth" "clinic" "user-profile" "appointment" "clinical-records" "notification" "system" }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dentistdss-db-{{ $svc }}
+  labels:
+    {{- include "dentistdss.labels" $ | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: {{ $storeName }}
+  target:
+    name: dentistdss-db-{{ $svc }}
+    creationPolicy: Owner
+  data:
+    - secretKey: DB_USERNAME
+      remoteRef:
+        key: {{ printf "%s/%s" $dbCredentialsPath $svc | quote }}
+        property: DB_USERNAME
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: {{ printf "%s/%s" $dbCredentialsPath $svc | quote }}
+        property: DB_PASSWORD
+{{- end }}
+{{- range $item := list (dict "svc" "audit" "key" "SPRING_DATA_MONGODB_URI") (dict "svc" "genai" "key" "SPRING_DATA_MONGODB_URI") (dict "svc" "clinical-records" "key" "MONGODB_URI") }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dentistdss-mongo-{{ $item.svc }}
+  labels:
+    {{- include "dentistdss.labels" $ | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: {{ $storeName }}
+  target:
+    name: dentistdss-mongo-{{ $item.svc }}
+    creationPolicy: Owner
+  data:
+    - secretKey: {{ $item.key }}
+      remoteRef:
+        key: {{ printf "%s/%s" $dbCredentialsPath $item.svc | quote }}
+        property: {{ $item.key }}
+{{- end }}
 {{ if index .Values.services "genai-service" "enabled" }}
 ---
 apiVersion: external-secrets.io/v1

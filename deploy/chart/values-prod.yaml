@@ -10,6 +10,7 @@ externalSecrets:
   runtimePath: apps/dentistdss/prod/runtime
   genaiServiceAuthPath: apps/dentistdss/prod/genai-service-auth
   serviceAuthPath: apps/dentistdss/prod/service-auth
+  dbCredentialsPath: apps/dentistdss/prod/db-credentials
 
 # Match the dev heap/exit policy so prod containers honor their memory limits
 # and fail fast on OOM instead of limping in a degraded state.

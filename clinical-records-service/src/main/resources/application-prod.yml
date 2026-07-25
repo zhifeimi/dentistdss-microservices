@@ -28,9 +28,14 @@ spring:
       timeout: 2s
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/dentistdss}
-    username: dentistdss
-    password: ${POSTGRES_PASSWORD}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  # DATA-02: the app datasource uses this service's least-privilege
+  # role; Flyway keeps connecting as the migration owner for DDL.
+  flyway:
+    user: ${FLYWAY_DB_USERNAME:dentistdss}
+    password: ${POSTGRES_PASSWORD}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -52,7 +57,7 @@ spring:
         order_updates: true
         batch_versioned_data: true
   mongodb:
-    uri: ${MONGODB_URI:mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@mongo:27017/dentistdss_files?authSource=admin}
+    uri: ${MONGODB_URI}
     database: dentistdss
 
 jwt:

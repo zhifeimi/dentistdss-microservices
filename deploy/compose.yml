@@ -178,6 +178,8 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_USERNAME: svc_auth
+      DB_PASSWORD: ${AUTH_SERVICE_DB_PASSWORD:?AUTH_SERVICE_DB_PASSWORD is required}
       JWT_RSA_PRIVATE_KEY: ${JWT_RSA_PRIVATE_KEY:?JWT_RSA_PRIVATE_KEY is required}
       JWT_RSA_PUBLIC_KEY: ${JWT_RSA_PUBLIC_KEY:?JWT_RSA_PUBLIC_KEY is required}
       JWT_RSA_KEY_ID: ${JWT_RSA_KEY_ID:-dentistdss-homelab-1}
@@ -218,6 +220,8 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_USERNAME: svc_clinic
+      DB_PASSWORD: ${CLINIC_SERVICE_DB_PASSWORD:?CLINIC_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
@@ -245,6 +249,8 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_USERNAME: svc_user_profile
+      DB_PASSWORD: ${USER_PROFILE_SERVICE_DB_PASSWORD:?USER_PROFILE_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
@@ -270,6 +276,8 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_USERNAME: svc_system
+      DB_PASSWORD: ${SYSTEM_SERVICE_DB_PASSWORD:?SYSTEM_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8086/actuator/health >/dev/null"]
@@ -295,6 +303,8 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_USERNAME: svc_notification
+      DB_PASSWORD: ${NOTIFICATION_SERVICE_DB_PASSWORD:?NOTIFICATION_SERVICE_DB_PASSWORD is required}
       MAIL_HOST: ${MAIL_HOST:?MAIL_HOST is required}
       MAIL_PORT: ${MAIL_PORT:-587}
       MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
@@ -333,6 +343,8 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_USERNAME: svc_appointment
+      DB_PASSWORD: ${APPOINTMENT_SERVICE_DB_PASSWORD:?APPOINTMENT_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
@@ -362,8 +374,9 @@ services:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss_files?authSource=admin
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      DB_USERNAME: svc_clinical_records
+      DB_PASSWORD: ${CLINICAL_RECORDS_SERVICE_DB_PASSWORD:?CLINICAL_RECORDS_SERVICE_DB_PASSWORD is required}
+      MONGODB_URI: mongodb://svc_clinical_records:${CLINICAL_RECORDS_SERVICE_MONGO_PASSWORD:?CLINICAL_RECORDS_SERVICE_MONGO_PASSWORD is required}@mongo:27017/dentistdss_files?authSource=admin
       AUTH_SERVICE_URL: http://auth-service:8081
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
@@ -387,8 +400,7 @@ services:
         condition: service_healthy
     environment:
       <<: *spring-environment
-      SPRING_DATA_MONGODB_URI: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}@mongo:27017/dentistdss?authSource=admin
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      SPRING_DATA_MONGODB_URI: mongodb://svc_audit:${AUDIT_SERVICE_MONGO_PASSWORD:?AUDIT_SERVICE_MONGO_PASSWORD is required}@mongo:27017/dentistdss?authSource=admin
       AUTH_SERVICE_URL: http://auth-service:8081
       SERVICE_AUTH_PUBLIC_KEY_AUTH: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:-}
       SERVICE_AUTH_KEY_ID_AUTH: ${SERVICE_AUTH_KEY_ID_AUTH:-auth-service-1}
@@ -430,7 +442,7 @@ services:
       - egress
     environment:
       <<: *spring-environment
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD is required}
+      SPRING_DATA_MONGODB_URI: mongodb://svc_genai:${GENAI_SERVICE_MONGO_PASSWORD:?GENAI_SERVICE_MONGO_PASSWORD is required}@mongo:27017/dentistdss?authSource=admin
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}

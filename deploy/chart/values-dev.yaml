@@ -10,6 +10,7 @@ externalSecrets:
   runtimePath: apps/dentistdss/dev/runtime
   genaiServiceAuthPath: apps/dentistdss/dev/genai-service-auth
   serviceAuthPath: apps/dentistdss/dev/service-auth
+  dbCredentialsPath: apps/dentistdss/dev/db-credentials
 
 commonEnv:
   JAVA_TOOL_OPTIONS: -Xms64m -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError

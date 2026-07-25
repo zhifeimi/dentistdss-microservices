@@ -122,15 +122,11 @@ jq -n \
       MAIL_HOST: $mail_host,
       MAIL_PORT: $mail_port,
       MAIL_USERNAME: $mail_username,
-      MAIL_PASSWORD: $mail_password,
-      SPRING_DATA_MONGODB_URI: (
-        "mongodb://dentistdss:" + $mongo_password +
-        "@mongo:27017/dentistdss?authSource=admin"
-      ),
-      MONGODB_URI: (
-        "mongodb://dentistdss:" + $mongo_password +
-        "@mongo:27017/dentistdss_files?authSource=admin"
-      )
+      MAIL_PASSWORD: $mail_password
+      # DATA-02: the legacy root-user MONGODB_URI/SPRING_DATA_MONGODB_URI keys
+      # are intentionally gone — per-service mongo URIs live in the
+      # db-credentials/* records (seed-vault-db-credentials.sh); no workload
+      # may consume a root URI anymore.
     }
   }' >"${TEMP_DIR}/payload.json"
 

@@ -35,10 +35,35 @@ Cloudflare, not inside the Java container. The PWA runs separately on Vercel.
    `JWT_RSA_PUBLIC_KEY`. Remove the temporary PEM files after storing the keys
    in the homelab secret manager.
 
-4. Authenticate Docker to GHCR if the packages are private.
-5. Run `./scripts/deploy.sh`.
-6. Configure Cloudflare Tunnel and test the public API URL.
-7. Run `./scripts/backup.sh`, copy the backup off-host, and verify a restore
+4. Set the per-service database credentials in `.env` (every
+   `*_SERVICE_DB_PASSWORD` and `*_SERVICE_MONGO_PASSWORD` value — see
+   `.env.example`). Application services authenticate with these
+   least-privilege credentials (DATA-02); the postgres/mongo root users are
+   bootstrap, Flyway-owner, and backup only. Provision the roles before
+   starting the apps (both runs are idempotent — re-run after any password
+   rotation):
+
+   ```bash
+   docker compose up -d postgres mongo redis
+   set -a; . ./.env; set +a
+   docker compose exec -T \
+     -e PGPASSWORD="$POSTGRES_PASSWORD" \
+     -e AUTH_SERVICE_DB_PASSWORD -e CLINIC_SERVICE_DB_PASSWORD \
+     -e USER_PROFILE_SERVICE_DB_PASSWORD -e APPOINTMENT_SERVICE_DB_PASSWORD \
+     -e CLINICAL_RECORDS_SERVICE_DB_PASSWORD -e NOTIFICATION_SERVICE_DB_PASSWORD \
+     -e SYSTEM_SERVICE_DB_PASSWORD \
+     postgres bash -s < scripts/provision-db-roles.sh
+   docker compose exec -T \
+     -e MONGO_ADMIN_URI="mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/admin" \
+     -e AUDIT_SERVICE_MONGO_PASSWORD -e GENAI_SERVICE_MONGO_PASSWORD \
+     -e CLINICAL_RECORDS_SERVICE_MONGO_PASSWORD \
+     mongo bash -s < scripts/provision-db-roles.sh
+   ```
+
+5. Authenticate Docker to GHCR if the packages are private.
+6. Run `./scripts/deploy.sh`.
+7. Configure Cloudflare Tunnel and test the public API URL.
+8. Run `./scripts/backup.sh`, copy the backup off-host, and verify a restore
    before treating the deployment as durable.
 
 ## CI/CD contract
@@ -67,6 +92,15 @@ the rest wait and no-op.
   `spring.jpa.hibernate.ddl-auto: validate` and fails fast at boot if the
   entities and the migrated schema ever drift. No deployment manifest
   overrides this anymore.
+- **Per-service roles (DATA-02)** — `V3__service_roles.sql` creates one
+  least-privilege PostgreSQL role per JDBC service (never with a password;
+  `scripts/provision-db-roles.sh` sets passwords out-of-band). Application
+  datasources connect as these roles (`DB_USERNAME`/`DB_PASSWORD`); Flyway
+  keeps connecting as the migration owner via
+  `spring.flyway.user`/`spring.flyway.password`, so DDL privileges stay out
+  of the runtime roles. Every future table-creating migration must also
+  grant the new table to its owning service role — new tables default to no
+  service access.
 
 Schema changes are new `V2__<description>.sql` migrations added to
 `db-migrations/src/main/resources/db/migration/`. **Never edit

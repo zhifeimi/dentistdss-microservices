@@ -17,6 +17,11 @@ externalSecrets:
   # One Vault record per issuing service (auth/appointment/clinical-records/
   # notification), each holding SERVICE_AUTH_PRIVATE_KEY, _PUBLIC_KEY, _KEY_ID.
   serviceAuthPath: apps/dentistdss/dev/service-auth
+  # DATA-02: one Vault record per service holding its database credentials.
+  # JDBC services hold DB_USERNAME + DB_PASSWORD; mongo services hold the
+  # full per-service URI (audit/genai: SPRING_DATA_MONGODB_URI;
+  # clinical-records: MONGODB_URI alongside its DB_USERNAME/DB_PASSWORD).
+  dbCredentialsPath: apps/dentistdss/dev/db-credentials
   # The genai-service-auth record historically came from the cluster-wide
   # store; override these to move it onto the namespace-scoped store.
   genaiStoreKind: ClusterSecretStore
@@ -31,9 +36,10 @@ externalSecrets:
     dentistdss-postgres:
       - POSTGRES_PASSWORD
     dentistdss-mongo:
+      # Root bootstrap credential only (mongo StatefulSet). Per-service mongo
+      # URIs live in the db-credentials/* records (DATA-02); no workload may
+      # consume a root-URI key anymore.
       - MONGO_INITDB_ROOT_PASSWORD
-      - MONGODB_URI
-      - SPRING_DATA_MONGODB_URI
     dentistdss-redis:
       - REDIS_PASSWORD
     dentistdss-auth-keys:
@@ -104,6 +110,7 @@ services:
     externalEgress: true
     secrets:
       - dentistdss-postgres
+      - dentistdss-db-auth
       - dentistdss-redis
       - dentistdss-auth-keys
     env:
@@ -119,6 +126,7 @@ services:
     replicas: 1
     secrets:
       - dentistdss-postgres
+      - dentistdss-db-clinic
       - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
@@ -131,7 +139,7 @@ services:
     enabled: false
     externalEgress: true
     secrets:
-      - dentistdss-mongo
+      - dentistdss-mongo-genai
       - dentistdss-redis
     env:
       VERTEX_AI_ENABLED: "true"
@@ -143,6 +151,7 @@ services:
     replicas: 1
     secrets:
       - dentistdss-postgres
+      - dentistdss-db-user-profile
       - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
@@ -154,6 +163,7 @@ services:
     replicas: 1
     secrets:
       - dentistdss-postgres
+      - dentistdss-db-system
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       AUTH_SERVICE_URL: http://auth-service:8081
@@ -161,7 +171,7 @@ services:
     port: 8087
     replicas: 1
     secrets:
-      - dentistdss-mongo
+      - dentistdss-mongo-audit
     env:
       AUTH_SERVICE_URL: http://auth-service:8081
   notification-service:
@@ -170,6 +180,7 @@ services:
     externalEgress: true
     secrets:
       - dentistdss-postgres
+      - dentistdss-db-notification
       - dentistdss-mail
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
@@ -179,6 +190,7 @@ services:
     replicas: 1
     secrets:
       - dentistdss-postgres
+      - dentistdss-db-appointment
       - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
@@ -190,7 +202,8 @@ services:
     replicas: 1
     secrets:
       - dentistdss-postgres
-      - dentistdss-mongo
+      - dentistdss-db-clinical-records
+      - dentistdss-mongo-clinical-records
       - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss

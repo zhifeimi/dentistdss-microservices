@@ -57,5 +57,12 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- MongoDB driver for the DATA-02 credential-contract suite
+             (MongoCredentialContractTest); version managed by the Boot BOM. -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
