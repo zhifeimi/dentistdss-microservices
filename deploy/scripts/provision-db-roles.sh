@@ -61,7 +61,7 @@ provision_pg_role() {
   psql -v ON_ERROR_STOP=1 --no-psqlrc --quiet -v role="$role" -v pw="$pw" <<'SQL'
 do $$
 begin
-    if not exists (select from pg_roles where rolename = :'role') then
+    if not exists (select from pg_roles where rolname = :'role') then
         execute format('create role %I login', :'role');
     end if;
 end $$;

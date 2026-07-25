@@ -23,25 +23,25 @@
 
 do $$
 begin
-    if not exists (select from pg_roles where rolename = 'svc_auth') then
+    if not exists (select from pg_roles where rolname = 'svc_auth') then
         create role svc_auth login;
     end if;
-    if not exists (select from pg_roles where rolename = 'svc_clinic') then
+    if not exists (select from pg_roles where rolname = 'svc_clinic') then
         create role svc_clinic login;
     end if;
-    if not exists (select from pg_roles where rolename = 'svc_user_profile') then
+    if not exists (select from pg_roles where rolname = 'svc_user_profile') then
         create role svc_user_profile login;
     end if;
-    if not exists (select from pg_roles where rolename = 'svc_appointment') then
+    if not exists (select from pg_roles where rolname = 'svc_appointment') then
         create role svc_appointment login;
     end if;
-    if not exists (select from pg_roles where rolename = 'svc_clinical_records') then
+    if not exists (select from pg_roles where rolname = 'svc_clinical_records') then
         create role svc_clinical_records login;
     end if;
-    if not exists (select from pg_roles where rolename = 'svc_notification') then
+    if not exists (select from pg_roles where rolname = 'svc_notification') then
         create role svc_notification login;
     end if;
-    if not exists (select from pg_roles where rolename = 'svc_system') then
+    if not exists (select from pg_roles where rolname = 'svc_system') then
         create role svc_system login;
     end if;
 end $$;
