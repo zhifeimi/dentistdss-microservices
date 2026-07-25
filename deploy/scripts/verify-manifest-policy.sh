@@ -102,23 +102,24 @@ ensure_tools() {
         exit 2
     fi
 
-    local os arch sha
+    local os uname_arch asset_arch sha
     os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-    arch="$(uname -m)"
-    case "${os}/${arch}" in
-        linux/x86_64) sha="${KUBECONFORM_SHA_LINUX_AMD64}" ;;
-        darwin/arm64) sha="${KUBECONFORM_SHA_DARWIN_ARM64}" ;;
+    uname_arch="$(uname -m)"
+    # Release assets use Go-style arch names (amd64), not uname's (x86_64).
+    case "${os}/${uname_arch}" in
+        linux/x86_64) asset_arch="amd64"; sha="${KUBECONFORM_SHA_LINUX_AMD64}" ;;
+        darwin/arm64) asset_arch="arm64"; sha="${KUBECONFORM_SHA_DARWIN_ARM64}" ;;
         *)
-            echo "[manifest-policy] unsupported platform ${os}/${arch} for auto-download;" >&2
+            echo "[manifest-policy] unsupported platform ${os}/${uname_arch} for auto-download;" >&2
             echo "[manifest-policy] install kubeconform ${KUBECONFORM_VERSION} manually and re-run." >&2
             exit 2
             ;;
     esac
 
     KUBECONFORM_TMP="$(mktemp -d)"
-    local archive="kubeconform-${os}-${arch}.tar.gz"
+    local archive="kubeconform-${os}-${asset_arch}.tar.gz"
     local url="https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/${archive}"
-    log "downloading kubeconform ${KUBECONFORM_VERSION} for ${os}/${arch}"
+    log "downloading kubeconform ${KUBECONFORM_VERSION} for ${os}/${uname_arch}"
     curl -fsSL "${url}" -o "${KUBECONFORM_TMP}/${archive}"
     printf '%s  %s\n' "${sha}" "${KUBECONFORM_TMP}/${archive}" | shasum -a 256 -c - >/dev/null
     tar -xzf "${KUBECONFORM_TMP}/${archive}" -C "${KUBECONFORM_TMP}" kubeconform

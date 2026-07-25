@@ -106,17 +106,35 @@ battery (one deliberate break per assertion family).
   declares the modern 1.3.x facade and a full ban would break the build
   without removing any vulnerable version.
 - `security.yml` (PR-gated + weekly schedule + dispatch): `dependency-review`
-  (`fail-on-severity: high`, PR comment summary); `sast-sbom` runs the
+  (`fail-on-severity: high`, PR comment summary). The dependency graph must
+  be enabled in the repository settings for private repos; until it is, the
+  job probes the compare API and skips with a `::notice::` instead of
+  failing — the Trivy filesystem gate covers newly vulnerable dependencies
+  in the meantime. `sast-sbom` runs the
   `security` Maven profile — SpotBugs 4.10.3.0 + FindSecBugs at
   effort=Max/threshold=Low/`failOnError`, plus the CycloneDX aggregate SBOM
   (`target/bom.json`/`bom.xml`) uploaded as an artifact; `trivy-fs`
-  (vuln+secret, HIGH/CRITICAL, SARIF) is the always-on PR vulnerability gate
+  (vuln+secret, HIGH/CRITICAL) is the always-on PR vulnerability gate
   and needs no API key (OSV-based); `trivy-config` matrix-scans `deploy/`
-  and all 13 service directories; `dependency-check` (OWASP, CVSS≥7) runs
+  and all 13 service directories. Both Trivy jobs are two-phase: a
+  table-format gate at HIGH/CRITICAL with `exit-code: 1`, followed by a
+  non-gating SARIF export for code scanning
+  (`limit-severities-for-sarif: true`). The split is required because
+  trivy-action's SARIF mode overrides the severity filter to ALL severities,
+  which would fail the gate on LOW advisories such as Dockerfile DS-0026
+  (no HEALTHCHECK — covered operationally by the Kubernetes probe
+  assertions). `dependency-check` (OWASP, CVSS≥7) runs
   scheduled/dispatch only and is **key-optional** — it uses
   `secrets.NVD_API_KEY` when present and otherwise exits with a `::notice::`
   skip, so it never blocks on a missing secret and no new repo secret was
   added.
+- Vulnerability remediation surfaced by the `trivy-fs` gate: Netty
+  4.2.15.Final → 4.2.16.Final (CVE-2026-59901 Bzip2Decoder infinite loop;
+  CVE-2026-55831/-55833/-56745/-56816 in the HTTP codecs) and PostgreSQL
+  JDBC 42.7.11 → 42.7.12 (CVE-2026-54291, SCRAM-SHA-256-PLUS
+  channel-binding downgrade), both as root-pom property overrides ahead of
+  the versions managed by Boot 4.0.7; the overrides should be removed once
+  a Boot point release catches up.
 - FindSecBugs triage policy: real findings are fixed in code — e.g.
   `RC_REF_COMPARISON` surfaced a genuine boxed-Long authorization comparison
   bug in appointment-service (fixed to `.equals`), `UNSAFE_HASH_EQUALS`
@@ -155,7 +173,9 @@ battery (one deliberate break per assertion family).
   probes, ghcr.io images with explicit non-`latest` tags, and
   secret-reference-to-ExternalSecret matching. Every assertion family is
   mutation-tested: a deliberately broken render fails exactly the expected
-  way.
+  way. kubeconform v0.8.0 comes from PATH or a checksum-verified downloaded
+  release asset (Go-style arch names — `linux-amd64`/`darwin-arm64` — which
+  the CI 404 on `17f75ff` showed must not be derived from `uname -m`).
 - Image provenance: all 13 service Dockerfiles pin the base image by
   multi-arch digest
   (`eclipse-temurin:25-jre-jammy@sha256:b8ba5f…1ab5`, amd64+arm64+ppc64le+
