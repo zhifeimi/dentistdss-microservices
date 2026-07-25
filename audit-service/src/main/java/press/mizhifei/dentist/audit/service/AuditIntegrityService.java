@@ -32,11 +32,26 @@ import java.util.List;
  *       without rebuilding the chain) — {@code BATCH_ROOT_MISMATCH}.</li>
  * </ol>
  *
+ * <p>Known limit (security review 2026-07-25, accepted by contract
+ * decision — no code change): these checks verify only the surviving
+ * chain. Tail truncation — deleting the newest seal(s) together with the
+ * entries in their covered {@code _id} ranges — and deletion of every seal
+ * both leave a self-consistent state that verifies clean; the deleted
+ * documents surface in neither the chain nor the {@code unsealedDocuments}
+ * backlog (which counts only entries still present), and
+ * {@link AuditSealingService} silently resumes sealing on a truncated
+ * chain. Detecting those shapes would require a monotonic high-water mark
+ * in a trust domain outside the audit store; until then the practical
+ * mitigation is shrinking the audit-store write surface (DATA-02
+ * per-service credentials).
+ *
  * <p>Detection, not prevention: a fully consistent rewrite of sealed
- * history would require controlling the sealer. Entries written before this
- * feature carry no content hash and are never sealed; they are invisible to
- * verification by design. Plain method, no transaction — standalone Mongo
- * as deployed has no multi-document transactions.
+ * history would require controlling the sealer, and tail truncation or a
+ * full chain wipe requires only write access to the audit store. Entries
+ * written before this feature carry no content hash and are never sealed;
+ * they are invisible to verification by design. Plain method, no
+ * transaction — standalone Mongo as deployed has no multi-document
+ * transactions.
  */
 @Service
 @RequiredArgsConstructor

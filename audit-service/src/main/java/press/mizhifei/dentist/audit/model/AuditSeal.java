@@ -14,9 +14,17 @@ import java.time.LocalDateTime;
  * A tamper-evident batch seal (AUDIT-01). Seals never touch the entry
  * documents themselves: each one covers a contiguous {@code _id} range of
  * content-hashed entries and chains to its predecessor, so any edit,
- * deletion, insertion, or chain surgery inside a sealed range is detectable
- * by recomputation. The unique {@code sequence} index is the double-sealing
- * backstop (relies on Mongo auto-index creation, which is on by default).
+ * deletion, insertion, or chain surgery inside a surviving seal is
+ * detectable by recomputation. Known limit (security review 2026-07-25,
+ * accepted by contract decision — no code change): the chain has no
+ * external watermark, so tail truncation — deleting the newest seal(s)
+ * together with the entries in their covered ranges — and full deletion of
+ * the seal collection leave a self-consistent state that verification
+ * cannot distinguish from a never-tampered chain; closing that gap would
+ * require a monotonic high-water mark in a trust domain outside the audit
+ * store (see the AUDIT-01 notes in {@code SECURITY_HARDENING_TRACEABILITY.md}).
+ * The unique {@code sequence} index is the double-sealing backstop (relies
+ * on Mongo auto-index creation, which is on by default).
  */
 @Data
 @Builder

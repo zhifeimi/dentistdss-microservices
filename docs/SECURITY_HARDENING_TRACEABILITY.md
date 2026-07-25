@@ -75,9 +75,24 @@ Credential-based, server-attributed audit ingest landed on
   and range continuity, chain linkage, seal self-hash, sealed-range
   document count and boundaries, per-document content hashes, and the batch
   root. This is detection, not prevention: a fully consistent rewrite of
-  sealed history would require controlling the sealer. Documents written
-  before this feature carry no content hash and are never sealed; they
-  surface as the report's `unsealedDocuments` backlog count.
+  sealed history would require controlling the sealer. Known limit
+  (security review 2026-07-25, accepted by contract decision — no code
+  change): the chain has no external watermark, so tail truncation —
+  deleting the newest seal(s) together with the entries in their covered
+  `_id` ranges — and full deletion of the seal collection both leave a
+  self-consistent state that `GET /audit/integrity` reports as
+  `verified=true`; the deleted documents surface in neither the chain nor
+  the `unsealedDocuments` backlog, and the sealer silently resumes on the
+  truncated chain. Detection covers tampering inside surviving seals; it
+  does not cover removal of the tail or the whole chain. Closing that gap
+  would require a monotonic high-water mark in a trust domain outside the
+  audit store (out of scope for the shipped contract: ZERO new deployment
+  env vars); the compensating-control roadmap is DATA-02 per-service
+  credentials, which shrinks the attacker class to services that
+  legitimately hold audit-store write access (NetworkPolicy-restricted).
+  Documents written before this feature carry no content hash and are
+  never sealed; they surface as the report's `unsealedDocuments` backlog
+  count.
 
 ### DATA-01 — partial: Flyway baseline and validate shipped
 
