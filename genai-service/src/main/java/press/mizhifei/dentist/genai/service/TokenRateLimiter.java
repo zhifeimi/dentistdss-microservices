@@ -18,8 +18,15 @@ import java.util.regex.Pattern;
 @Component
 public class TokenRateLimiter {
 
+    // The source:<64-hex> alternative is the anonymous-caller key emitted by
+    // GenAIController.rateLimitKey(): the gateway-issued HMAC-SHA-256 source
+    // fingerprint (lowercase hex). Without it every anonymous /chatbot/help
+    // request fails subject-key validation and 500s before reaching the
+    // model. All three alternatives stay tightly bounded, because the
+    // subject key is embedded into Redis keys and this pattern doubles as
+    // the key-injection guard.
     private static final Pattern SUBJECT_KEY_PATTERN = Pattern.compile(
-            "(?:user:[1-9][0-9]*|session:[A-Za-z0-9_-]{43})");
+            "(?:user:[1-9][0-9]*|session:[A-Za-z0-9_-]{43}|source:[0-9a-f]{64})");
 
     private static final DefaultRedisScript<Long> TOKEN_BUCKET_SCRIPT =
             new DefaultRedisScript<>("""

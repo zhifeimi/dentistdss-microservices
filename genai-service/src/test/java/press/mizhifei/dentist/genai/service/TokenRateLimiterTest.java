@@ -61,6 +61,47 @@ class TokenRateLimiterTest {
     }
 
     @Test
+    void acceptsAnonymousSourceFingerprintKeysWithScopedKey() {
+        whenExecuteReturns(1L);
+
+        String anonymousKey = "source:"
+                + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        StepVerifier.create(rateLimiter.tryConsume(anonymousKey, 3))
+                .expectNext(true)
+                .verifyComplete();
+
+        verify(redisTemplate).execute(
+                any(DefaultRedisScript.class),
+                eq(List.of("genai:token-rate:v1:" + anonymousKey)),
+                any(Object[].class));
+
+        StepVerifier.create(rateLimiter.tryAcquireStream(anonymousKey))
+                .expectNext(true)
+                .verifyComplete();
+        StepVerifier.create(rateLimiter.releaseStream(anonymousKey))
+                .verifyComplete();
+    }
+
+    @Test
+    void rejectsMalformedSubjectKeysBeforeRedis() {
+        StepVerifier.create(rateLimiter.tryConsume(
+                        "source:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF", 1))
+                .expectError(IllegalArgumentException.class)
+                .verify();
+        StepVerifier.create(rateLimiter.tryConsume(
+                        "source:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde", 1))
+                .expectError(IllegalArgumentException.class)
+                .verify();
+        StepVerifier.create(rateLimiter.tryAcquireStream(
+                        "source:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"))
+                .expectError(IllegalArgumentException.class)
+                .verify();
+
+        verify(redisTemplate, never()).execute(
+                any(DefaultRedisScript.class), anyList(), any(Object[].class));
+    }
+
+    @Test
     void mapsRedisDenialWithoutFailingOpen() {
         whenExecuteReturns(0L);
 
