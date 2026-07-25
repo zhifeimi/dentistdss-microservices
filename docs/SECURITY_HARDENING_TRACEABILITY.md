@@ -208,6 +208,40 @@ battery (one deliberate break per assertion family).
   PR vulnerability gate). ZAP is scheduled-only by explicit decision (not a
   PR gate).
 
+### Security review — 2026-07-25 (completion gate 5)
+
+A bundled `/security-review` pass covered the full hardening surface in seven
+scoped reviews: api-gateway; security-common; appointment-service +
+clinical-records-service; deploy/ + workflows + root/module poms; auth-service;
+genai-service + audit-service; clinic-service + user-profile-service +
+system-settings + notification-service. Methodology per the bundled skill:
+identify → parallel false-positive filtering → confidence ≥8 threshold.
+
+- **Confirmed findings: exactly one.** Audit tail truncation (AUDIT-01):
+  `AuditIntegrityService.verify()` walks only the surviving seals, so deleting
+  the newest seal(s) with the entries in their covered `_id` ranges — or the
+  whole seal collection — leaves a self-consistent chain that verifies clean,
+  and the deleted documents surface in neither the chain nor the
+  `unsealedDocuments` backlog. Resolved as a **documented, contract-accepted
+  limitation** (user decision 2026-07-25, no code change): the `AuditSeal`
+  model, `AuditIntegrityService`, and the AUDIT-01 notes above state the limit
+  plainly, with a monotonic external high-water mark as the out-of-scope fix
+  and DATA-02 per-service credentials as the compensating-control roadmap.
+- **In-flight defect found and fixed by the review:** anonymous GenAI callers
+  failed subject-key validation and 500ed before reaching the model, because
+  `TokenRateLimiter`'s subject pattern lacked the anonymous `source:<64-hex>`
+  key shape (the gateway HMAC-SHA-256 fingerprint). Pattern extended, two
+  regression tests added (valid anonymous key accepted with a scoped Redis
+  key; malformed keys still rejected before Redis — the pattern doubles as the
+  key-injection guard), 132 module tests green.
+- Two sub-threshold observations were deliberately excluded (data-model
+  global scope, not missing checks): staff-gated `/user/email/{email}/details`
+  without tenant scoping — patients are global in the data model; and
+  `GET /patient/{id}` without clinic scoping — the Patient entity has no
+  clinic field.
+- Gate-5 status: **no unresolved confirmed findings** — the single confirmed
+  finding is closed as an explicitly accepted, documented limitation.
+
 ## Completion gates
 
 1. `./mvnw --batch-mode --no-transfer-progress verify -Pprod` passes on Java 25.
