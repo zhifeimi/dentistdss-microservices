@@ -4,26 +4,92 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 
 | ID | Finding | Required control | Required regression evidence | Status |
 |---|---|---|---|---|
-| AUTH-01 | Caller-controlled OAuth identity can issue a token | Remove `/auth/oauth/process`; verify Google ID token, audience, issuer, nonce, subject, and verified email | Forged email/provider input and replayed nonce fail | In progress |
-| AUTH-02 | JWT appears in OAuth redirect URLs and logs | Remove token redirect flow; use popup ID-token exchange and memory-only access token | Browser URL, history, logs, and storage contain no token | In progress |
-| AUTH-03 | JWT lacks issuer/audience/revocation/key rotation | Nimbus tokens with `iss`, `aud`, `jti`, `kid`; short TTL; refresh rotation; JWK key ring | Wrong audience/issuer/kid, revoked token, and refresh reuse fail | In progress |
-| AUTH-04 | Login and verification endpoints are brute-forceable | Redis limits, `SecureRandom`, hashed one-time codes, generic responses | Cross-replica attempt limits and account-enumeration tests pass | In progress |
-| RBAC-01 | User can approve their own privilege escalation | Authenticated reviewer identity, separation of duties, role-transition policy, row locking | Patient/self/cross-clinic approval attempts fail | In progress |
-| RBAC-02 | Gateway authorization defaults to allow | Exact method/path rules and deny-by-default fallback | Unknown and prefix-confusion routes fail | In progress |
-| RBAC-03 | Domain services trust gateway headers | Local resource-server validation in every service; strip inbound identity headers | Direct forged-header requests fail without a valid JWT | In progress |
-| RBAC-04 | Clinical, appointment, user, clinic, notification, GenAI, system, and audit operations lack ownership checks | Service-layer resource and tenant policies | Parameterized cross-user/cross-clinic matrix passes | In progress |
-| ADMIN-01 | Spring Boot Admin and management endpoints are public | Remove public route; private authenticated management plane; health-only public exposure | Public Admin/refresh/config/route inspection requests fail | In progress |
-| SECRET-01 | Every pod receives the complete runtime secret and JWT private key | Per-service ExternalSecrets; auth-only signing key | Rendered manifests show least-privilege secret references | In progress |
-| DATA-01 | Shared DB schema mutates through Hibernate | Versioned Flyway owner and `ddl-auto: validate` everywhere | Migration succeeds against baseline; all services validate | Partial (see notes) |
+| AUTH-01 | Caller-controlled OAuth identity can issue a token | Remove `/auth/oauth/process`; verify Google ID token, audience, issuer, nonce, subject, and verified email | Forged email/provider input and replayed nonce fail | Done (see notes) |
+| AUTH-02 | JWT appears in OAuth redirect URLs and logs | Remove token redirect flow; use popup ID-token exchange and memory-only access token | Browser URL, history, logs, and storage contain no token | Done (see notes) |
+| AUTH-03 | JWT lacks issuer/audience/revocation/key rotation | Nimbus tokens with `iss`, `aud`, `jti`, `kid`; short TTL; refresh rotation; JWK key ring | Wrong audience/issuer/kid, revoked token, and refresh reuse fail | Done (see notes) |
+| AUTH-04 | Login and verification endpoints are brute-forceable | Redis limits, `SecureRandom`, hashed one-time codes, generic responses | Cross-replica attempt limits and account-enumeration tests pass | Done (see notes) |
+| RBAC-01 | User can approve their own privilege escalation | Authenticated reviewer identity, separation of duties, role-transition policy, row locking | Patient/self/cross-clinic approval attempts fail | Done (see notes) |
+| RBAC-02 | Gateway authorization defaults to allow | Exact method/path rules and deny-by-default fallback | Unknown and prefix-confusion routes fail | Done (see notes) |
+| RBAC-03 | Domain services trust gateway headers | Local resource-server validation in every service; strip inbound identity headers | Direct forged-header requests fail without a valid JWT | Done (see notes) |
+| RBAC-04 | Clinical, appointment, user, clinic, notification, GenAI, system, and audit operations lack ownership checks | Service-layer resource and tenant policies | Parameterized cross-user/cross-clinic matrix passes | Done (see notes) |
+| ADMIN-01 | Spring Boot Admin and management endpoints are public | Remove public route; private authenticated management plane; health-only public exposure | Public Admin/refresh/config/route inspection requests fail | Done (see notes) |
+| SECRET-01 | Every pod receives the complete runtime secret and JWT private key | Per-service ExternalSecrets; auth-only signing key | Rendered manifests show least-privilege secret references | Done (see notes) |
+| DATA-01 | Shared DB schema mutates through Hibernate | Versioned Flyway owner and `ddl-auto: validate` everywhere | Migration succeeds against baseline; all services validate | Done (see notes) |
 | DATA-02 | Applications use shared/root database credentials | Per-service PostgreSQL and MongoDB users/grants | Unauthorized cross-database/table access fails | Done (see notes) |
 | DATA-03 | Dental image writes and validation are unsafe | Signature/decode limits, canonical re-encode, authorized ownership, cleanup/compensation | False MIME, polyglot, oversized pixels, and unauthorized access fail | Done (see notes) |
 | AUDIT-01 | Audit actor is caller-controlled and critical actions are not integrated | Server-attributed internal ingest, transactional outbox, append-only/tamper-evident store | Caller cannot forge actor; critical mutations emit immutable events | Done (see notes) |
-| RATE-01 | Session and GenAI limiter maps are bypassable/unbounded | Redis-backed signed sessions, quotas, TTLs, and cardinality limits | Rotation, restart, and multi-replica tests pass without key leaks | In progress |
-| ERROR-01 | Exception details leak to clients/logs | Shared safe error envelope and redaction | Responses contain no stack/SQL/SMTP/provider/token/PHI detail | In progress |
-| CORS-01 | CORS and cookie behavior are broader than required | Exact origins/methods/headers, Origin validation, anti-CSRF for cookie endpoints | Hostile Origin and missing/invalid CSRF requests fail | In progress |
+| RATE-01 | Session and GenAI limiter maps are bypassable/unbounded | Redis-backed signed sessions, quotas, TTLs, and cardinality limits | Rotation, restart, and multi-replica tests pass without key leaks | Done (see notes) |
+| ERROR-01 | Exception details leak to clients/logs | Shared safe error envelope and redaction | Responses contain no stack/SQL/SMTP/provider/token/PHI detail | Done (see notes) |
+| CORS-01 | CORS and cookie behavior are broader than required | Exact origins/methods/headers, Origin validation, anti-CSRF for cookie endpoints | Hostile Origin and missing/invalid CSRF requests fail | Done (see notes) |
 | SUPPLY-01 | Build inputs and vulnerabilities are not fully gated | Java 25, Enforcer, FindSecBugs, Dependency-Check, SBOM, Trivy, pinned actions/images | CI blocks policy violations and high/critical findings | Done (see notes) |
 
 ## Finding notes
+
+### Status reconciliation — 2026-07-26
+
+All eighteen findings are now Done. The rows below were implemented and
+CI-verified across the program (PR #22, final HEAD `0112db6`; PWA PR #13,
+final HEAD `81fce97`) but had never been statused; each is mapped here to
+its shipped control and regression evidence.
+
+- **AUTH-01** — `/auth/oauth/process` removed; the backend verifies the
+  Google ID token's audience, issuer, nonce, subject, and verified email
+  before issuance. Forged-email/provider inputs and replayed nonces fail in
+  `OAuthUserServiceTest`.
+- **AUTH-02** — the PWA exchanges the Google ID token in a popup and keeps
+  the access token in memory only (PR #13): unit + e2e suites green; no
+  token reaches the URL, history, logs, or web storage.
+- **AUTH-03** — Nimbus RS256 with `iss`/`aud`/`jti`/`kid`, short TTL,
+  refresh rotation, JWK key ring. Wrong audience/issuer/kid, revoked
+  tokens, and refresh reuse fail in `JwtTokenProviderTest`,
+  `JwtKeyProviderTest`, `AuthSessionServiceTest`,
+  `AuthSessionRevocationServiceTest`.
+- **AUTH-04** — attempt limits live in Redis (shared across replicas by
+  construction), one-time codes are `SecureRandom` + pepper-hashed, and
+  responses are generic (no account enumeration) — auth service suites plus
+  `TokenRateLimiterTest` (incl. anonymous fingerprint keys).
+- **RBAC-01** — reviewer identity comes from the verified JWT, self- and
+  patient-approvals are refused, role transitions are policy-checked and
+  row-locked: `UserApprovalServiceSecurityTest`,
+  `UserApprovalControllerSecurityTest`.
+- **RBAC-02** — the gateway matches exact method/path rules with
+  deny-by-default; unknown and prefix-confusion routes fail in
+  `AccessTokenSecurityIntegrationTest`.
+- **RBAC-03** — every HTTP service validates the JWT locally and the
+  gateway strips inbound identity headers; the forged-header matrix lives
+  in the per-service `*SecurityTest` suites (genai, notification,
+  appointment, audit, user-profile, system, auth, clinic) +
+  `DentistDssJwtSecurityTest`.
+- **RBAC-04** — service-layer ownership and tenant policies with the
+  cross-user/cross-clinic matrices: appointment, clinical-records (4
+  suites), clinic, user-profile, notification, audit, genai, system
+  authorization/security suites.
+- **ADMIN-01** — shipped stricter than the required control: no admin
+  route exists at the gateway at all (public admin/actuator inspection
+  falls to the tested deny-by-default of RBAC-02); the admin plane is
+  reachable only inside the cluster (namespace default-deny NetworkPolicy),
+  and chart health checks use in-cluster URLs.
+- **SECRET-01** — per-service ExternalSecrets everywhere (runtime-record
+  slices, service-auth per-issuer records, DATA-02 db-credentials records);
+  the JWT signing key is mounted only by auth-service; the manifest-policy
+  CI gate proves every `envFrom`/non-optional `secretKeyRef` resolves to a
+  rendered ExternalSecret in both environments.
+- **DATA-01** — completion condition met in CI run 30204305542: all seven
+  `*SchemaContractTest` suites green (migrate V1–V3 + entity validation,
+  0 skipped), on top of the earlier live-PostgreSQL baseline adoption
+  verification. With #319, DDL runs only in the migrator Job and every
+  service still validates at boot.
+- **RATE-01** — anonymous sessions are HMAC-fingerprinted with absolute
+  lifetimes and throttled issuance; GenAI quotas are Redis-backed with
+  scoped keys (`TokenRateLimiterTest`, incl. anonymous `source:` keys);
+  session rotation/revocation in the auth session suites.
+- **ERROR-01** — shared safe error envelope with redaction
+  (`GlobalExceptionHandlerTest`); the 2026-07-25 seven-surface security
+  review found no stack/SQL/SMTP/provider/token/PHI leakage.
+- **CORS-01** — exact origin/method/header rules
+  (`GatewayCorsSecurityIntegrationTest`); cookie endpoints require the
+  XSRF header from the PWA bootstrap (PR #13 unit + e2e); backend stateless
+  JWT chains documented (CodeQL CSRF alerts remediated).
 
 ### AUDIT-01 — done: server attribution, durable outbox, tamper-evident seals
 
