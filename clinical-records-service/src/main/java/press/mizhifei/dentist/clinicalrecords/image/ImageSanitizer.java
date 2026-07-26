@@ -13,7 +13,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Iterator;
 
 /**
@@ -51,14 +50,28 @@ public class ImageSanitizer {
         }
     }
 
-    private final FileUploadConfig config;
+    private final long maxFileSize;
+    private final java.util.Set<String> allowedTypes;
+    private final int thumbnailWidth;
+    private final int thumbnailHeight;
+    private final long maxPixels;
+    private final int maxDimension;
 
+    /**
+     * Snapshots the immutable scalar settings at construction (the
+     * mutable {@link FileUploadConfig} bean itself is never retained).
+     */
     public ImageSanitizer(FileUploadConfig config) {
-        this.config = config;
+        this.maxFileSize = config.getMaxFileSize();
+        this.allowedTypes = java.util.Set.of(config.getAllowedImageTypes());
+        this.thumbnailWidth = config.getThumbnailWidth();
+        this.thumbnailHeight = config.getThumbnailHeight();
+        this.maxPixels = config.getMaxPixels();
+        this.maxDimension = config.getMaxDimension();
     }
 
     public SanitizedImage sanitize(MultipartFile file) {
-        if (file == null || file.isEmpty() || file.getSize() > config.getMaxFileSize()) {
+        if (file == null || file.isEmpty() || file.getSize() > maxFileSize) {
             throw new InvalidClinicalRequestException();
         }
         byte[] bytes = readBytes(file);
@@ -116,7 +129,7 @@ public class ImageSanitizer {
      */
     private void requireDeclaredTypeMatches(String declared, Family family) {
         if (declared == null
-                || !Arrays.asList(config.getAllowedImageTypes()).contains(declared)
+                || !allowedTypes.contains(declared)
                 || !declared.equals(family.contentType)) {
             throw new InvalidClinicalRequestException();
         }
@@ -140,9 +153,9 @@ public class ImageSanitizer {
                 reader.setInput(input, true, true);
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
-                if (width > config.getMaxDimension()
-                        || height > config.getMaxDimension()
-                        || (long) width * (long) height > config.getMaxPixels()) {
+                if (width > maxDimension
+                        || height > maxDimension
+                        || (long) width * (long) height > maxPixels) {
                     throw new InvalidClinicalRequestException();
                 }
                 return reader.read(0);
@@ -184,17 +197,17 @@ public class ImageSanitizer {
         }
     }
 
-    /** Thumbnail from the already-decoded pixels; failure is tolerated (null). */
+    /** Thumbnail from the already-decoded pixels; failure is tolerated (empty array). */
     private byte[] renderThumbnail(BufferedImage image) {
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Thumbnails.of(image)
-                    .size(config.getThumbnailWidth(), config.getThumbnailHeight())
+                    .size(thumbnailWidth, thumbnailHeight)
                     .outputFormat("jpg")
                     .outputQuality(0.8)
                     .toOutputStream(output);
             return output.toByteArray();
         } catch (IOException | RuntimeException exception) {
-            return null;
+            return new byte[0];
         }
     }
 }

@@ -107,7 +107,13 @@ public class DentalImageService {
             DentalImage saved = dentalImageRepository.saveAndFlush(dentalImage);
             log.info("Uploaded dental image {}", saved.getId());
             return toResponse(saved);
-        } catch (RuntimeException exception) {
+        } catch (ClinicalDependencyUnavailableException exception) {
+            compensateFailedUpload(originalFileId, thumbnailFileId);
+            throw exception;
+        } catch (InvalidClinicalRequestException exception) {
+            compensateFailedUpload(originalFileId, thumbnailFileId);
+            throw exception;
+        } catch (org.springframework.dao.DataAccessException exception) {
             compensateFailedUpload(originalFileId, thumbnailFileId);
             throw exception;
         }
@@ -341,7 +347,7 @@ public class DentalImageService {
             ClinicalRecordsAccess.WriteOwner owner,
             ObjectId originalFileId,
             String originalFilename) {
-        if (sanitized.thumbnailBytes() == null) {
+        if (sanitized.thumbnailBytes().length == 0) {
             return null;
         }
         try {

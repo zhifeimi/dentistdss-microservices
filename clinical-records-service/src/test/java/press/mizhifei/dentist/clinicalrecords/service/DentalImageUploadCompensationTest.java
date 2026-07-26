@@ -70,9 +70,9 @@ class DentalImageUploadCompensationTest {
         when(imageSanitizer.sanitize(any())).thenReturn(sanitized);
         when(gridFSBucket.uploadFromStream(anyString(), any(), any())).thenReturn(originalId);
         when(thumbnailGridFSBucket.uploadFromStream(anyString(), any(), any())).thenReturn(thumbnailId);
-        when(dentalImageRepository.saveAndFlush(any())).thenThrow(new IllegalStateException("pg down"));
+        when(dentalImageRepository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("pg down"));
 
-        assertThrows(IllegalStateException.class, () -> upload());
+        assertThrows(org.springframework.dao.DataAccessResourceFailureException.class, () -> upload());
 
         verify(gridFSBucket).delete(originalId);
         verify(thumbnailGridFSBucket).delete(thumbnailId);
@@ -94,9 +94,9 @@ class DentalImageUploadCompensationTest {
     void missingThumbnailCompensatesOnlyTheOriginal() {
         when(imageSanitizer.sanitize(any())).thenReturn(cannedSanitized(false));
         when(gridFSBucket.uploadFromStream(anyString(), any(), any())).thenReturn(originalId);
-        when(dentalImageRepository.saveAndFlush(any())).thenThrow(new IllegalStateException("pg down"));
+        when(dentalImageRepository.saveAndFlush(any())).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("pg down"));
 
-        assertThrows(IllegalStateException.class, () -> upload());
+        assertThrows(org.springframework.dao.DataAccessResourceFailureException.class, () -> upload());
 
         verify(gridFSBucket).delete(originalId);
         verify(thumbnailGridFSBucket, never()).uploadFromStream(anyString(), any(), any());
@@ -184,7 +184,7 @@ class DentalImageUploadCompensationTest {
         return new SanitizedImage(
                 new byte[] {(byte) 0xFF, (byte) 0xD8, 1, 2, 3},
                 "image/jpeg",
-                withThumbnail ? new byte[] {9, 9, 9} : null,
+                withThumbnail ? new byte[] {9, 9, 9} : new byte[0],
                 32,
                 24);
     }
