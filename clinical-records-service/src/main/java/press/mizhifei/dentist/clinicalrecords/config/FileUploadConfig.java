@@ -19,6 +19,10 @@ public class FileUploadConfig {
     private String[] allowedImageTypes = {"image/jpeg", "image/png", "image/tiff", "image/bmp"};
     private int thumbnailWidth = 200;
     private int thumbnailHeight = 200;
+    // DATA-03: decompression-bomb guard — enforced from the image header
+    // before any pixel data is decoded.
+    private long maxPixels = 25_000_000L;
+    private int maxDimension = 10_000;
     
 
     
@@ -35,4 +39,8 @@ public class FileUploadConfig {
     public void setThumbnailWidth(int thumbnailWidth) { this.thumbnailWidth = thumbnailWidth; }
     public int getThumbnailHeight() { return thumbnailHeight; }
     public void setThumbnailHeight(int thumbnailHeight) { this.thumbnailHeight = thumbnailHeight; }
+    public long getMaxPixels() { return maxPixels; }
+    public void setMaxPixels(long maxPixels) { this.maxPixels = maxPixels; }
+    public int getMaxDimension() { return maxDimension; }
+    public void setMaxDimension(int maxDimension) { this.maxDimension = maxDimension; }
 }

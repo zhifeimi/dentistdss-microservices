@@ -16,7 +16,7 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 | SECRET-01 | Every pod receives the complete runtime secret and JWT private key | Per-service ExternalSecrets; auth-only signing key | Rendered manifests show least-privilege secret references | In progress |
 | DATA-01 | Shared DB schema mutates through Hibernate | Versioned Flyway owner and `ddl-auto: validate` everywhere | Migration succeeds against baseline; all services validate | Partial (see notes) |
 | DATA-02 | Applications use shared/root database credentials | Per-service PostgreSQL and MongoDB users/grants | Unauthorized cross-database/table access fails | Done (see notes) |
-| DATA-03 | Dental image writes and validation are unsafe | Signature/decode limits, canonical re-encode, authorized ownership, cleanup/compensation | False MIME, polyglot, oversized pixels, and unauthorized access fail | In progress |
+| DATA-03 | Dental image writes and validation are unsafe | Signature/decode limits, canonical re-encode, authorized ownership, cleanup/compensation | False MIME, polyglot, oversized pixels, and unauthorized access fail | Done (see notes) |
 | AUDIT-01 | Audit actor is caller-controlled and critical actions are not integrated | Server-attributed internal ingest, transactional outbox, append-only/tamper-evident store | Caller cannot forge actor; critical mutations emit immutable events | Done (see notes) |
 | RATE-01 | Session and GenAI limiter maps are bypassable/unbounded | Redis-backed signed sessions, quotas, TTLs, and cardinality limits | Rotation, restart, and multi-replica tests pass without key leaks | In progress |
 | ERROR-01 | Exception details leak to clients/logs | Shared safe error envelope and redaction | Responses contain no stack/SQL/SMTP/provider/token/PHI detail | In progress |
@@ -307,6 +307,53 @@ rewrite or drop `audit_seals`; with collection-scoped roles, only
   mongo users are created by the real provision script. Rollout runbook
   (seed → provision → upgrade; fail-closed until seeded) lives in
   `deploy/chart/README.md` and `deploy/README.md`.
+
+### DATA-03 — done: dental image upload hardening
+
+Uploads to clinical-records-service now pass through a single-decode
+sanitize pipeline (`image/ImageSanitizer.java`) before anything reaches
+storage; the original upload bytes are discarded.
+
+- **Signature validation (false MIME fails)**: the client-declared content
+  type is never trusted. Magic-byte sniffing (JPEG/PNG/TIFF/BMP) determines
+  the real family; the upload is rejected when the bytes match no allowed
+  family, when the declared type is not an allowed type, or when declared
+  and sniffed types disagree.
+- **Decode limits (oversized pixels fail)**: dimensions are read from the
+  image header via `ImageReader.getWidth/getHeight` BEFORE any pixel data
+  is decoded; uploads over `file.upload.max-pixels` (default 25 MP) or
+  `max-dimension` (default 10 000 px) are rejected without decoding —
+  closing the decompression-bomb vector against the 1Gi pods. Corrupt and
+  truncated bytes map to the same generic 400 (no detail leak).
+- **Canonical re-encode (polyglot fails)**: the decoded image is
+  re-encoded — JPEG→JPEG q0.9, PNG/TIFF/BMP→PNG — so appended archives,
+  comments, and EXIF/metadata payloads are destroyed by construction; only
+  the canonical artifact and a thumbnail rendered from the SAME decoded
+  pixels (one decode total, no second bomb surface) are written to GridFS.
+  The stored `contentType`/`fileSize` describe the canonical artifact, not
+  the upload. TIFF decode uses the new pure-Java
+  `com.twelvemonkeys.imageio:imageio-tiff` dependency (the JDK has no TIFF
+  reader — TIFF thumbnails were silently absent before).
+- **Cleanup/compensation**: the GridFS blobs and the PostgreSQL row are not
+  atomic, so the upload flushes the row inside a try (`saveAndFlush`) and,
+  on any failure after a blob write, deletes both blobs best-effort before
+  rethrowing — no orphaned storage. Deletion now removes the metadata row
+  FIRST and then the blobs (an orphaned blob is tolerable and reclaimable;
+  broken metadata pointing at a deleted blob is not); blob cleanup failures
+  are logged, not thrown. Residual, documented: a compound failure (PG down
+  AND blob cleanup failing) can still strand a blob — no background sweeper
+  exists yet.
+- **Authorized ownership**: unchanged from RBAC-04 — the existing
+  `DentalImageServiceAuthorizationTest` suite (patient/dentist/system-admin
+  scoping, linked-note owner matching) stays green.
+- **Regression evidence**: `ImageSanitizerTest` (12 tests — false-MIME
+  both directions, non-image bytes, disallowed declared type, polyglot
+  payload absent from the canonical artifact, oversized-header rejection
+  before decode, truncation, size caps, canonical JPEG/PNG outputs) and
+  `DentalImageUploadCompensationTest` (6 tests — blob compensation on
+  persistence failure, no-compensation-on-first-write-failure,
+  canonical-metadata storage, row-before-blob delete ordering, row
+  deletion surviving blob cleanup failure).
 
 ## Completion gates
 

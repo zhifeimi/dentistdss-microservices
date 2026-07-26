@@ -4,7 +4,6 @@ import com.mongodb.client.gridfs.GridFSBucket;
 import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.coobird.thumbnailator.Thumbnails;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -19,6 +18,8 @@ import press.mizhifei.dentist.clinicalrecords.dto.DentalImageResponse;
 import press.mizhifei.dentist.clinicalrecords.exception.ClinicalDependencyUnavailableException;
 import press.mizhifei.dentist.clinicalrecords.exception.ClinicalResourceNotFoundException;
 import press.mizhifei.dentist.clinicalrecords.exception.InvalidClinicalRequestException;
+import press.mizhifei.dentist.clinicalrecords.image.ImageSanitizer;
+import press.mizhifei.dentist.clinicalrecords.image.SanitizedImage;
 import press.mizhifei.dentist.clinicalrecords.model.ClinicalNote;
 import press.mizhifei.dentist.clinicalrecords.model.DentalImage;
 import press.mizhifei.dentist.clinicalrecords.model.ServiceVisit;
@@ -29,10 +30,8 @@ import press.mizhifei.dentist.clinicalrecords.security.ClinicalRecordsAccess;
 import press.mizhifei.dentist.clinicalrecords.security.ClinicalRecordsActor;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -51,6 +50,7 @@ public class DentalImageService {
     @Qualifier("thumbnailGridFSBucket")
     private final GridFSBucket thumbnailGridFSBucket;
     private final FileUploadConfig fileUploadConfig;
+    private final ImageSanitizer imageSanitizer;
 
     @Transactional
     public DentalImageResponse uploadDentalImage(
@@ -71,32 +71,46 @@ public class DentalImageService {
                 requestedDentistId,
                 requestedClinicId);
         validateLinks(actor, owner, clinicalNoteId, visitId);
-        validateImageFile(file, imageType);
+        requireNonBlank(imageType);
+        // DATA-03: sniff, pixel-guard, decode once, canonical re-encode. Only
+        // the sanitized artifacts ever reach storage; the original upload
+        // bytes (and any polyglot payload in them) are discarded.
+        SanitizedImage sanitized = imageSanitizer.sanitize(file);
 
         String originalFilename = safeOriginalFilename(file);
-        ObjectId originalFileId = uploadOriginal(file, owner, imageType, originalFilename);
-        String thumbnailFileId = uploadThumbnail(file, owner, originalFileId, originalFilename);
+        ObjectId originalFileId = null;
+        String thumbnailFileId = null;
+        try {
+            originalFileId = uploadOriginal(sanitized, owner, imageType, originalFilename);
+            thumbnailFileId = uploadThumbnail(sanitized, owner, originalFileId, originalFilename);
 
-        DentalImage dentalImage = DentalImage.builder()
-                .patientId(owner.patientId())
-                .dentistId(owner.dentistId())
-                .clinicId(owner.clinicId())
-                .clinicalNoteId(clinicalNoteId)
-                .visitId(visitId)
-                .gridfsFileId(originalFileId.toString())
-                .thumbnailGridfsId(thumbnailFileId)
-                .originalFilename(originalFilename)
-                .contentType(file.getContentType())
-                .fileSize(file.getSize())
-                .imageType(imageType)
-                .toothNumber(toothNumber)
-                .description(description)
-                .tags(tags)
-                .build();
+            DentalImage dentalImage = DentalImage.builder()
+                    .patientId(owner.patientId())
+                    .dentistId(owner.dentistId())
+                    .clinicId(owner.clinicId())
+                    .clinicalNoteId(clinicalNoteId)
+                    .visitId(visitId)
+                    .gridfsFileId(originalFileId.toString())
+                    .thumbnailGridfsId(thumbnailFileId)
+                    .originalFilename(originalFilename)
+                    .contentType(sanitized.canonicalContentType())
+                    .fileSize((long) sanitized.canonicalBytes().length)
+                    .imageType(imageType)
+                    .toothNumber(toothNumber)
+                    .description(description)
+                    .tags(tags)
+                    .build();
 
-        DentalImage saved = dentalImageRepository.save(dentalImage);
-        log.info("Uploaded dental image {}", saved.getId());
-        return toResponse(saved);
+            // Flush inside the try so a persistence failure still triggers
+            // the GridFS compensation below (a commit-time failure after the
+            // method returns would be too late to clean up the blobs).
+            DentalImage saved = dentalImageRepository.saveAndFlush(dentalImage);
+            log.info("Uploaded dental image {}", saved.getId());
+            return toResponse(saved);
+        } catch (RuntimeException exception) {
+            compensateFailedUpload(originalFileId, thumbnailFileId);
+            throw exception;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -128,17 +142,23 @@ public class DentalImageService {
     @Transactional
     public void deleteDentalImage(ClinicalRecordsActor actor, Long imageId) {
         DentalImage dentalImage = findManageableImage(actor, imageId);
+        // DATA-03: delete the metadata row first. An orphaned GridFS blob is
+        // tolerable (harmless, reclaimable); broken metadata pointing at a
+        // deleted blob is not. Blob failures are logged, not thrown, so the
+        // row deletion stands.
+        dentalImageRepository.delete(dentalImage);
         try {
             gridFSBucket.delete(parseStoredObjectId(dentalImage.getGridfsFileId()));
-            if (dentalImage.getThumbnailGridfsId() != null) {
-                thumbnailGridFSBucket.delete(parseStoredObjectId(dentalImage.getThumbnailGridfsId()));
-            }
         } catch (RuntimeException exception) {
-            log.warn("Clinical image {} storage deletion failed", dentalImage.getId());
-            throw new ClinicalDependencyUnavailableException(exception);
+            log.warn("Clinical image {} original blob cleanup failed; orphaned", dentalImage.getId());
         }
-
-        dentalImageRepository.delete(dentalImage);
+        if (dentalImage.getThumbnailGridfsId() != null) {
+            try {
+                thumbnailGridFSBucket.delete(parseStoredObjectId(dentalImage.getThumbnailGridfsId()));
+            } catch (RuntimeException exception) {
+                log.warn("Clinical image {} thumbnail blob cleanup failed; orphaned", dentalImage.getId());
+            }
+        }
         log.info("Deleted dental image {}", imageId);
     }
 
@@ -295,7 +315,7 @@ public class DentalImageService {
     }
 
     private ObjectId uploadOriginal(
-            MultipartFile file,
+            SanitizedImage sanitized,
             ClinicalRecordsAccess.WriteOwner owner,
             String imageType,
             String originalFilename) {
@@ -304,8 +324,8 @@ public class DentalImageService {
                 .append("dentistId", owner.dentistId())
                 .append("clinicId", owner.clinicId())
                 .append("imageType", imageType)
-                .append("contentType", file.getContentType());
-        try (InputStream inputStream = file.getInputStream()) {
+                .append("contentType", sanitized.canonicalContentType());
+        try (InputStream inputStream = new ByteArrayInputStream(sanitized.canonicalBytes())) {
             return gridFSBucket.uploadFromStream(
                     originalFilename,
                     inputStream,
@@ -317,12 +337,14 @@ public class DentalImageService {
     }
 
     private String uploadThumbnail(
-            MultipartFile file,
+            SanitizedImage sanitized,
             ClinicalRecordsAccess.WriteOwner owner,
             ObjectId originalFileId,
             String originalFilename) {
+        if (sanitized.thumbnailBytes() == null) {
+            return null;
+        }
         try {
-            byte[] thumbnailBytes = generateThumbnail(file);
             Document metadata = new Document()
                     .append("originalFileId", originalFileId.toString())
                     .append("patientId", owner.patientId())
@@ -331,12 +353,34 @@ public class DentalImageService {
                     .append("imageType", "THUMBNAIL");
             ObjectId thumbnailId = thumbnailGridFSBucket.uploadFromStream(
                     "thumb_" + originalFilename,
-                    new ByteArrayInputStream(thumbnailBytes),
+                    new ByteArrayInputStream(sanitized.thumbnailBytes()),
                     new GridFSUploadOptions().metadata(metadata));
             return thumbnailId.toString();
-        } catch (IOException | RuntimeException exception) {
-            log.warn("Clinical image thumbnail generation or upload failed");
+        } catch (RuntimeException exception) {
+            log.warn("Clinical image thumbnail upload failed");
             return null;
+        }
+    }
+
+    /**
+     * DATA-03 compensation: the PG row and the GridFS blobs are not atomic,
+     * so on any failure after a blob write the blobs are deleted
+     * best-effort before the exception propagates — no orphaned storage.
+     */
+    private void compensateFailedUpload(ObjectId originalFileId, String thumbnailFileId) {
+        if (originalFileId != null) {
+            try {
+                gridFSBucket.delete(originalFileId);
+            } catch (RuntimeException exception) {
+                log.warn("Clinical image original blob compensation failed");
+            }
+        }
+        if (thumbnailFileId != null) {
+            try {
+                thumbnailGridFSBucket.delete(new ObjectId(thumbnailFileId));
+            } catch (RuntimeException exception) {
+                log.warn("Clinical image thumbnail blob compensation failed");
+            }
         }
     }
 
@@ -434,17 +478,6 @@ public class DentalImageService {
         }
     }
 
-    private void validateImageFile(MultipartFile file, String imageType) {
-        if (file == null || file.isEmpty() || file.getSize() > fileUploadConfig.getMaxFileSize()) {
-            throw new InvalidClinicalRequestException();
-        }
-        requireNonBlank(imageType);
-        String contentType = file.getContentType();
-        if (contentType == null || !Arrays.asList(fileUploadConfig.getAllowedImageTypes()).contains(contentType)) {
-            throw new InvalidClinicalRequestException();
-        }
-    }
-
     private void requireNonBlank(String value) {
         if (value == null || value.isBlank()) {
             throw new InvalidClinicalRequestException();
@@ -461,17 +494,6 @@ public class DentalImageService {
             return new ObjectId(objectId);
         } catch (IllegalArgumentException exception) {
             throw new ClinicalDependencyUnavailableException(exception);
-        }
-    }
-
-    private byte[] generateThumbnail(MultipartFile file) throws IOException {
-        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            Thumbnails.of(file.getInputStream())
-                    .size(fileUploadConfig.getThumbnailWidth(), fileUploadConfig.getThumbnailHeight())
-                    .outputFormat("jpg")
-                    .outputQuality(0.8)
-                    .toOutputStream(outputStream);
-            return outputStream.toByteArray();
         }
     }
 

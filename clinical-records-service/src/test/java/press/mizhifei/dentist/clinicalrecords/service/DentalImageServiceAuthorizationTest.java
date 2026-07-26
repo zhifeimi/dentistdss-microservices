@@ -10,6 +10,7 @@ import press.mizhifei.dentist.clinicalrecords.client.ClinicServiceClient;
 import press.mizhifei.dentist.clinicalrecords.config.FileUploadConfig;
 import press.mizhifei.dentist.clinicalrecords.exception.ClinicalResourceNotFoundException;
 import press.mizhifei.dentist.clinicalrecords.exception.InvalidClinicalRequestException;
+import press.mizhifei.dentist.clinicalrecords.image.ImageSanitizer;
 import press.mizhifei.dentist.clinicalrecords.model.ClinicalNote;
 import press.mizhifei.dentist.clinicalrecords.model.DentalImage;
 import press.mizhifei.dentist.clinicalrecords.repository.ClinicalNoteRepository;
@@ -54,7 +55,8 @@ class DentalImageServiceAuthorizationTest {
                 mock(ClinicServiceClient.class),
                 gridFSBucket,
                 thumbnailGridFSBucket,
-                new FileUploadConfig());
+                new FileUploadConfig(),
+                mock(ImageSanitizer.class));
     }
 
     @Test

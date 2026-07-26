@@ -72,6 +72,14 @@
             <artifactId>thumbnailator</artifactId>
             <version>0.4.20</version>
         </dependency>
+        <!-- DATA-03: TIFF ImageIO plugin for the upload sanitizer's pixel
+             guard and canonical re-encode (JDK ImageIO has no TIFF reader;
+             pure Java, auto-registered via the ImageIO SPI). -->
+        <dependency>
+            <groupId>com.twelvemonkeys.imageio</groupId>
+            <artifactId>imageio-tiff</artifactId>
+            <version>3.14.0</version>
+        </dependency>
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
