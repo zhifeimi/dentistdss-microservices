@@ -138,11 +138,21 @@ db-credentials/genai:
 The chart renders one ExternalSecret per service from these records
 (`dentistdss-db-<svc>` ×7, `dentistdss-mongo-<svc>` ×3), consumed via
 `envFrom`. Application pods never see the PostgreSQL superuser or Mongo root
-credentials: the shared `dentistdss-postgres` Secret stays mounted on JDBC
-services only so Flyway can keep running DDL migrations as the migration
-owner (`spring.flyway.user`), and `dentistdss-mongo` is root-bootstrap-only
-for the Mongo StatefulSet. The Mongo URIs are themselves credentials — treat
-the `db-credentials/*` records with the same care as the runtime record.
+credentials: the owner password exists only on the postgres StatefulSet,
+the `dentistdss-db-migrator` hook Job (below), and the operator's backup,
+and `dentistdss-mongo` is root-bootstrap-only for the Mongo StatefulSet.
+The Mongo URIs are themselves credentials — treat the `db-credentials/*`
+records with the same care as the runtime record.
+
+Schema migrations run in the `dentistdss-db-migrator` **pre-install /
+pre-upgrade hook Job** (batch/v1, `helm.sh/hook-weight: -5`): it applies
+the Flyway migrations as the migration owner BEFORE any application pod
+rolls, reusing the auth-service image via Boot's PropertiesLauncher, and a
+migration failure fails the hook and the rollout — services never boot
+against an unmigrated schema. Application services run
+`spring.flyway.enabled: false` (Hibernate `ddl-auto: validate` remains the
+drift detector). On a fresh install Helm creates the StatefulSets first and
+the hook waits; on upgrade the database is already running.
 
 Rollout (per environment, in this order — pods fail fast until step 2 is
 done, by design):
@@ -164,8 +174,10 @@ done, by design):
 #    (kubectl exec into the postgres/mongo pods works too — see the script
 #    header for both invocation styles.)
 
-# 3. Upgrade the chart. Flyway V3 (running as the owner) reconciles the
-#    role/grant matrix no-op; pods start with their per-service credentials.
+# 3. Upgrade the chart. The pre-upgrade hook Job applies/reconciles the
+#    migrations (including V3's role/grant matrix) as the migration owner;
+#    pods then start with only their per-service credentials — application
+#    pods never hold the owner password.
 ```
 
 Seed each runtime record interactively without printing credentials:

@@ -278,14 +278,17 @@ rewrite or drop `audit_seals`; with collection-scoped roles, only
   authenticate against `admin`, so only the user:password in the URIs
   changed.
 - **Flyway owner (user decision 2026-07-25)**: the app datasource uses the
-  per-service role (`DB_USERNAME`/`DB_PASSWORD`); Flyway keeps connecting
-  as the migration owner via `spring.flyway.user`/`spring.flyway.password`
-  (`dentistdss`, from the existing `dentistdss-postgres` secret) so DDL
-  migrations keep working on boot. Residual, accepted: the owner credential
-  remains present in JDBC pod environments for Flyway — strictly less
-  exposure than today, where it is the runtime credential. Removing it from
-  app pods entirely (dedicated migrator Job / Helm hook) is a documented
-  follow-up.
+  per-service role (`DB_USERNAME`/`DB_PASSWORD`). Initially Flyway kept
+  connecting as the migration owner via `spring.flyway.user` from each JDBC
+  pod (accepted residual). **Residual closed (2026-07-26):** schema
+  migrations now run in a standalone `Migrator` main class (db-migrations,
+  plain JDBC) executed by a Helm pre-install/pre-upgrade hook Job and a
+  compose one-shot `migrator` service (both fail closed on migration
+  failure), reusing the auth-service image via Boot's PropertiesLauncher.
+  Application services run `spring.flyway.enabled: false` (Hibernate
+  `ddl-auto: validate` remains the drift detector), and the owner
+  credential now exists ONLY on the postgres StatefulSet, the hook
+  Job/one-shot, and the operator's backup — never in an application pod.
 - **Delivery**: per-service Vault records `apps/dentistdss/<env>/
   db-credentials/<service>` (seeded by
   `deploy/scripts/seed-vault-db-credentials.sh` — deliberately separate from

@@ -60,6 +60,12 @@ Cloudflare, not inside the Java container. The PWA runs separately on Vercel.
      mongo bash -s < scripts/provision-db-roles.sh
    ```
 
+   Schema migrations need no manual step: the one-shot `migrator` service
+   (auth-service image running the db-migrations `Migrator` main class)
+   applies them as the migration owner, and every JDBC service waits on its
+   successful completion before starting
+   (`depends_on: service_completed_successfully`).
+
 5. Authenticate Docker to GHCR if the packages are private.
 6. Run `./scripts/deploy.sh`.
 7. Configure Cloudflare Tunnel and test the public API URL.
@@ -95,10 +101,11 @@ the rest wait and no-op.
 - **Per-service roles (DATA-02)** — `V3__service_roles.sql` creates one
   least-privilege PostgreSQL role per JDBC service (never with a password;
   `scripts/provision-db-roles.sh` sets passwords out-of-band). Application
-  datasources connect as these roles (`DB_USERNAME`/`DB_PASSWORD`); Flyway
-  keeps connecting as the migration owner via
-  `spring.flyway.user`/`spring.flyway.password`, so DDL privileges stay out
-  of the runtime roles. Every future table-creating migration must also
+  datasources connect as these roles (`DB_USERNAME`/`DB_PASSWORD`). The
+  one-shot `migrator` compose service runs Flyway as the migration owner,
+  so owner credentials never enter application pods
+  (`spring.flyway.enabled: false` in the docker/prod profiles; local dev
+  still migrates on boot). Every future table-creating migration must also
   grant the new table to its owning service role — new tables default to no
   service access.
 

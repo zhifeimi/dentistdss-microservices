@@ -145,6 +145,9 @@ spec:
                   - notification-service
                   - appointment-service
                   - clinical-records-service
+                  # The standalone migrator Job (helm pre-install/pre-upgrade
+                  # hook) is the only non-service workload allowed at postgres.
+                  - db-migrator
       ports:
         - protocol: TCP
           port: 5432

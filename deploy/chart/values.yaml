@@ -109,7 +109,6 @@ services:
     replicas: 1
     externalEgress: true
     secrets:
-      - dentistdss-postgres
       - dentistdss-db-auth
       - dentistdss-redis
       - dentistdss-auth-keys
@@ -125,7 +124,6 @@ services:
     port: 8083
     replicas: 1
     secrets:
-      - dentistdss-postgres
       - dentistdss-db-clinic
       - dentistdss-redis
     env:
@@ -150,7 +148,6 @@ services:
     port: 8085
     replicas: 1
     secrets:
-      - dentistdss-postgres
       - dentistdss-db-user-profile
       - dentistdss-redis
     env:
@@ -162,7 +159,6 @@ services:
     port: 8086
     replicas: 1
     secrets:
-      - dentistdss-postgres
       - dentistdss-db-system
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
@@ -179,7 +175,6 @@ services:
     replicas: 1
     externalEgress: true
     secrets:
-      - dentistdss-postgres
       - dentistdss-db-notification
       - dentistdss-mail
     env:
@@ -189,7 +184,6 @@ services:
     port: 8089
     replicas: 1
     secrets:
-      - dentistdss-postgres
       - dentistdss-db-appointment
       - dentistdss-redis
     env:
@@ -201,7 +195,6 @@ services:
     port: 8090
     replicas: 1
     secrets:
-      - dentistdss-postgres
       - dentistdss-db-clinical-records
       - dentistdss-mongo-clinical-records
       - dentistdss-redis

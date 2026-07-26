@@ -26,11 +26,12 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
-  # DATA-02: the app datasource uses this service's least-privilege
-  # role; Flyway keeps connecting as the migration owner for DDL.
+  # DATA-02 follow-up: schema migrations run in the standalone migrator
+  # Job (Helm pre-upgrade hook / compose one-shot) as the migration owner;
+  # this service boots with its least-privilege role and never sees the
+  # owner credential. Hibernate ddl-auto=validate remains the drift check.
   flyway:
-    user: ${FLYWAY_DB_USERNAME:dentistdss}
-    password: ${POSTGRES_PASSWORD}
+    enabled: false
     hikari:
       maximum-pool-size: 15
       minimum-idle: 3

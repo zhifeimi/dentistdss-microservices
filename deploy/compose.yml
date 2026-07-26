@@ -161,6 +161,28 @@ services:
       retries: 15
       start_period: 90s
 
+  migrator:
+    image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-auth-service:${BACKEND_IMAGE_TAG:-latest}
+    # DATA-02 follow-up: one-shot schema migrator — the only container
+    # besides postgres itself and backup that holds the owner credential.
+    # Application services boot with spring.flyway.enabled=false and their
+    # least-privilege roles, gated on this completing successfully.
+    command:
+      - java
+      - -cp
+      - /app/app.jar
+      - -Dloader.main=press.mizhifei.dentist.db.Migrator
+      - org.springframework.boot.loader.launch.PropertiesLauncher
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    environment:
+      DB_MIGRATION_URL: jdbc:postgresql://postgres:5432/dentistdss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    restart: "no"
+
   auth-service:
     <<: *spring-service
     image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-auth-service:${BACKEND_IMAGE_TAG:-latest}
@@ -171,13 +193,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     networks:
       - backend
       - egress
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_USERNAME: svc_auth
       DB_PASSWORD: ${AUTH_SERVICE_DB_PASSWORD:?AUTH_SERVICE_DB_PASSWORD is required}
       JWT_RSA_PRIVATE_KEY: ${JWT_RSA_PRIVATE_KEY:?JWT_RSA_PRIVATE_KEY is required}
@@ -216,10 +239,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_USERNAME: svc_clinic
       DB_PASSWORD: ${CLINIC_SERVICE_DB_PASSWORD:?CLINIC_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
@@ -245,10 +269,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_USERNAME: svc_user_profile
       DB_PASSWORD: ${USER_PROFILE_SERVICE_DB_PASSWORD:?USER_PROFILE_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
@@ -272,10 +297,11 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_USERNAME: svc_system
       DB_PASSWORD: ${SYSTEM_SERVICE_DB_PASSWORD:?SYSTEM_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
@@ -296,13 +322,14 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     networks:
       - backend
       - egress
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_USERNAME: svc_notification
       DB_PASSWORD: ${NOTIFICATION_SERVICE_DB_PASSWORD:?NOTIFICATION_SERVICE_DB_PASSWORD is required}
       MAIL_HOST: ${MAIL_HOST:?MAIL_HOST is required}
@@ -339,10 +366,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_USERNAME: svc_appointment
       DB_PASSWORD: ${APPOINTMENT_SERVICE_DB_PASSWORD:?APPOINTMENT_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
@@ -370,10 +398,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
       <<: *spring-environment
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       DB_USERNAME: svc_clinical_records
       DB_PASSWORD: ${CLINICAL_RECORDS_SERVICE_DB_PASSWORD:?CLINICAL_RECORDS_SERVICE_DB_PASSWORD is required}
       MONGODB_URI: mongodb://svc_clinical_records:${CLINICAL_RECORDS_SERVICE_MONGO_PASSWORD:?CLINICAL_RECORDS_SERVICE_MONGO_PASSWORD is required}@mongo:27017/dentistdss_files?authSource=admin

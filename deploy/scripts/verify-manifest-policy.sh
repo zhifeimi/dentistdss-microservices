@@ -11,7 +11,7 @@
 #
 #   1. Exactly 11 NetworkPolicy documents (the chart renders them
 #      unconditionally; a change must be deliberate and reviewed here).
-#   2. Every Deployment and StatefulSet pod:
+#   2. Every Deployment, StatefulSet, and Job pod:
 #        - automountServiceAccountToken == false
 #        - pod securityContext.runAsNonRoot == true
 #      and every container / initContainer:
@@ -174,13 +174,13 @@ assert_pod_security() {
     # Pod-level checks: all selects run before any `as` binding (see yq note
     # 2); the workload name is computed in the final pipeline stage.
     report_violations "${file}" "${docs}" '
-        .[] | select(.kind == "Deployment" or .kind == "StatefulSet")
+        .[] | select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job")
         | select(.spec.template.spec.automountServiceAccountToken != false)
         | (.kind + "/" + .metadata.name)
             + ": automountServiceAccountToken must be false"
     '
     report_violations "${file}" "${docs}" '
-        .[] | select(.kind == "Deployment" or .kind == "StatefulSet")
+        .[] | select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job")
         | select(.spec.template.spec.securityContext.runAsNonRoot != true)
         | (.kind + "/" + .metadata.name)
             + ": pod securityContext.runAsNonRoot must be true"
@@ -189,7 +189,7 @@ assert_pod_security() {
     # then select on the expanded container context (selects after `[]` are
     # well-behaved; see yq note 2).
     report_violations "${file}" "${docs}" '
-        .[] | select(.kind == "Deployment" or .kind == "StatefulSet")
+        .[] | select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job")
         | . as $doc
         | ((.spec.template.spec.containers // [])
             + (.spec.template.spec.initContainers // []))[]
@@ -198,7 +198,7 @@ assert_pod_security() {
             + ": allowPrivilegeEscalation must be false"
     '
     report_violations "${file}" "${docs}" '
-        .[] | select(.kind == "Deployment" or .kind == "StatefulSet")
+        .[] | select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job")
         | . as $doc
         | ((.spec.template.spec.containers // [])
             + (.spec.template.spec.initContainers // []))[]
@@ -207,7 +207,7 @@ assert_pod_security() {
             + ": capabilities.drop must include ALL"
     '
     report_violations "${file}" "${docs}" '
-        .[] | select(.kind == "Deployment" or .kind == "StatefulSet")
+        .[] | select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job")
         | . as $doc
         | ((.spec.template.spec.containers // [])
             + (.spec.template.spec.initContainers // []))[]
@@ -258,7 +258,7 @@ assert_images() {
             + ": image must come from ghcr.io, got " + (.image // "")
     '
     report_violations "${file}" "${docs}" '
-        .[] | select(.kind == "Deployment" or .kind == "StatefulSet")
+        .[] | select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job")
         | . as $doc
         | ((.spec.template.spec.containers // [])
             + (.spec.template.spec.initContainers // []))[]
@@ -277,7 +277,7 @@ assert_secrets() {
     ext_list="$(yq '.[] | select(.kind == "ExternalSecret") | .metadata.name' "${docs}" \
         | grep -v -e '^---$' -e '^$' | sort -u)" || ext_list=""
     refs="$(yq '
-        .[] | select(.kind == "Deployment" or .kind == "StatefulSet")
+        .[] | select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job")
         | . as $doc
         | ((.spec.template.spec.containers // [])
             + (.spec.template.spec.initContainers // []))[]
