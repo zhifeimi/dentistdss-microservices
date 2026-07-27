@@ -1,14 +1,13 @@
 package press.mizhifei.dentist.clinicalrecords.service;
 
 import com.mongodb.client.gridfs.GridFSBucket;
-import com.mongodb.client.gridfs.model.GridFSFile;
 import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.coobird.thumbnailator.Thumbnails;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,240 +15,494 @@ import press.mizhifei.dentist.clinicalrecords.client.AuthServiceClient;
 import press.mizhifei.dentist.clinicalrecords.client.ClinicServiceClient;
 import press.mizhifei.dentist.clinicalrecords.config.FileUploadConfig;
 import press.mizhifei.dentist.clinicalrecords.dto.DentalImageResponse;
+import press.mizhifei.dentist.clinicalrecords.exception.ClinicalDependencyUnavailableException;
+import press.mizhifei.dentist.clinicalrecords.exception.ClinicalResourceNotFoundException;
+import press.mizhifei.dentist.clinicalrecords.exception.InvalidClinicalRequestException;
+import press.mizhifei.dentist.clinicalrecords.image.ImageSanitizer;
+import press.mizhifei.dentist.clinicalrecords.image.SanitizedImage;
+import press.mizhifei.dentist.clinicalrecords.model.ClinicalNote;
 import press.mizhifei.dentist.clinicalrecords.model.DentalImage;
+import press.mizhifei.dentist.clinicalrecords.model.ServiceVisit;
+import press.mizhifei.dentist.clinicalrecords.repository.ClinicalNoteRepository;
 import press.mizhifei.dentist.clinicalrecords.repository.DentalImageRepository;
+import press.mizhifei.dentist.clinicalrecords.repository.ServiceVisitRepository;
+import press.mizhifei.dentist.clinicalrecords.security.ClinicalRecordsAccess;
+import press.mizhifei.dentist.clinicalrecords.security.ClinicalRecordsActor;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Objects;
+import java.util.Optional;
 
-/**
- *
- * @author zhifeimi
- * @email zm377@uowmail.edu.au
- * @github https://github.com/zm377
- *
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DentalImageService {
-    
+
     private final DentalImageRepository dentalImageRepository;
+    private final ClinicalNoteRepository clinicalNoteRepository;
+    private final ServiceVisitRepository serviceVisitRepository;
     private final AuthServiceClient authServiceClient;
     private final ClinicServiceClient clinicServiceClient;
     private final GridFSBucket gridFSBucket;
     @Qualifier("thumbnailGridFSBucket")
     private final GridFSBucket thumbnailGridFSBucket;
     private final FileUploadConfig fileUploadConfig;
-    
-    @Transactional
-    public DentalImageResponse uploadDentalImage(MultipartFile file, 
-                                               Long patientId, 
-                                               Long dentistId, 
-                                               Long clinicId,
-                                               Long clinicalNoteId,
-                                               Long visitId,
-                                               String imageType,
-                                               String toothNumber,
-                                               String description,
-                                               String tags) throws IOException {
-        
-        // Validate file
-        validateImageFile(file);
-        
-        // Upload original image to GridFS
-        Document metadata = new Document()
-                .append("patientId", patientId)
-                .append("dentistId", dentistId)
-                .append("clinicId", clinicId)
-                .append("imageType", imageType)
-                .append("contentType", file.getContentType());
+    private final ImageSanitizer imageSanitizer;
 
-        GridFSUploadOptions uploadOptions = new GridFSUploadOptions().metadata(metadata);
-        ObjectId fileId = gridFSBucket.uploadFromStream(
-                file.getOriginalFilename(),
-                file.getInputStream(),
-                uploadOptions
-        );
-        
-        // Generate and upload thumbnail
+    @Transactional
+    public DentalImageResponse uploadDentalImage(
+            ClinicalRecordsActor actor,
+            MultipartFile file,
+            Long patientId,
+            Long requestedDentistId,
+            Long requestedClinicId,
+            Long clinicalNoteId,
+            Long visitId,
+            String imageType,
+            String toothNumber,
+            String description,
+            String tags) {
+        ClinicalRecordsAccess.WriteOwner owner = ClinicalRecordsAccess.resolveWriteOwner(
+                actor,
+                patientId,
+                requestedDentistId,
+                requestedClinicId);
+        validateLinks(actor, owner, clinicalNoteId, visitId);
+        requireNonBlank(imageType);
+        // DATA-03: sniff, pixel-guard, decode once, canonical re-encode. Only
+        // the sanitized artifacts ever reach storage; the original upload
+        // bytes (and any polyglot payload in them) are discarded.
+        SanitizedImage sanitized = imageSanitizer.sanitize(file);
+
+        String originalFilename = safeOriginalFilename(file);
+        ObjectId originalFileId = null;
         String thumbnailFileId = null;
         try {
-            byte[] thumbnailBytes = generateThumbnail(file);
-            if (thumbnailBytes != null) {
-                Document thumbnailMetadata = new Document()
-                        .append("originalFileId", fileId.toString())
-                        .append("patientId", patientId)
-                        .append("imageType", "THUMBNAIL");
+            originalFileId = uploadOriginal(sanitized, owner, imageType, originalFilename);
+            thumbnailFileId = uploadThumbnail(sanitized, owner, originalFileId, originalFilename);
 
-                GridFSUploadOptions thumbnailUploadOptions = new GridFSUploadOptions().metadata(thumbnailMetadata);
-                ObjectId thumbnailId = thumbnailGridFSBucket.uploadFromStream(
-                        "thumb_" + file.getOriginalFilename(),
-                        new ByteArrayInputStream(thumbnailBytes),
-                        thumbnailUploadOptions
-                );
-                thumbnailFileId = thumbnailId.toString();
-            }
-        } catch (Exception e) {
-            log.warn("Failed to generate thumbnail for image {}: {}", file.getOriginalFilename(), e.getMessage());
+            DentalImage dentalImage = DentalImage.builder()
+                    .patientId(owner.patientId())
+                    .dentistId(owner.dentistId())
+                    .clinicId(owner.clinicId())
+                    .clinicalNoteId(clinicalNoteId)
+                    .visitId(visitId)
+                    .gridfsFileId(originalFileId.toString())
+                    .thumbnailGridfsId(thumbnailFileId)
+                    .originalFilename(originalFilename)
+                    .contentType(sanitized.canonicalContentType())
+                    .fileSize((long) sanitized.canonicalBytes().length)
+                    .imageType(imageType)
+                    .toothNumber(toothNumber)
+                    .description(description)
+                    .tags(tags)
+                    .build();
+
+            // Flush inside the try so a persistence failure still triggers
+            // the GridFS compensation below (a commit-time failure after the
+            // method returns would be too late to clean up the blobs).
+            DentalImage saved = dentalImageRepository.saveAndFlush(dentalImage);
+            log.info("Uploaded dental image {}", saved.getId());
+            return toResponse(saved);
+        } catch (ClinicalDependencyUnavailableException exception) {
+            compensateFailedUpload(originalFileId, thumbnailFileId);
+            throw exception;
+        } catch (InvalidClinicalRequestException exception) {
+            compensateFailedUpload(originalFileId, thumbnailFileId);
+            throw exception;
+        } catch (org.springframework.dao.DataAccessException exception) {
+            compensateFailedUpload(originalFileId, thumbnailFileId);
+            throw exception;
         }
-        
-        // Save metadata to PostgreSQL
-        DentalImage dentalImage = DentalImage.builder()
-                .patientId(patientId)
-                .dentistId(dentistId)
-                .clinicId(clinicId)
-                .clinicalNoteId(clinicalNoteId)
-                .visitId(visitId)
-                .gridfsFileId(fileId.toString())
-                .thumbnailGridfsId(thumbnailFileId)
-                .originalFilename(file.getOriginalFilename())
-                .contentType(file.getContentType())
-                .fileSize(file.getSize())
-                .imageType(imageType)
-                .toothNumber(toothNumber)
-                .description(description)
-                .tags(tags)
-                .build();
-        
-        DentalImage saved = dentalImageRepository.save(dentalImage);
-        log.info("Uploaded dental image {} for patient {} by dentist {}", 
-                saved.getId(), saved.getPatientId(), saved.getDentistId());
-        
-        return toResponse(saved);
     }
-    
+
     @Transactional(readOnly = true)
-    public InputStream downloadDentalImage(Long imageId) {
-        DentalImage dentalImage = dentalImageRepository.findById(imageId)
-                .orElseThrow(() -> new IllegalArgumentException("Dental image not found"));
-        
-        ObjectId fileId = new ObjectId(dentalImage.getGridfsFileId());
-        return gridFSBucket.openDownloadStream(fileId);
+    public InputStream downloadDentalImage(ClinicalRecordsActor actor, Long imageId) {
+        DentalImage dentalImage = findReadableImage(actor, imageId);
+        try {
+            return gridFSBucket.openDownloadStream(parseStoredObjectId(dentalImage.getGridfsFileId()));
+        } catch (RuntimeException exception) {
+            log.warn("Clinical image {} storage download failed", dentalImage.getId());
+            throw new ClinicalDependencyUnavailableException(exception);
+        }
     }
-    
+
     @Transactional(readOnly = true)
-    public InputStream downloadThumbnail(Long imageId) {
-        DentalImage dentalImage = dentalImageRepository.findById(imageId)
-                .orElseThrow(() -> new IllegalArgumentException("Dental image not found"));
-        
+    public InputStream downloadThumbnail(ClinicalRecordsActor actor, Long imageId) {
+        DentalImage dentalImage = findReadableImage(actor, imageId);
         if (dentalImage.getThumbnailGridfsId() == null) {
-            throw new IllegalArgumentException("Thumbnail not available for this image");
+            throw new ClinicalResourceNotFoundException();
         }
-        
-        ObjectId thumbnailId = new ObjectId(dentalImage.getThumbnailGridfsId());
-        return thumbnailGridFSBucket.openDownloadStream(thumbnailId);
+        try {
+            return thumbnailGridFSBucket.openDownloadStream(
+                    parseStoredObjectId(dentalImage.getThumbnailGridfsId()));
+        } catch (RuntimeException exception) {
+            log.warn("Clinical image {} thumbnail download failed", dentalImage.getId());
+            throw new ClinicalDependencyUnavailableException(exception);
+        }
     }
-    
+
     @Transactional
-    public void deleteDentalImage(Long imageId) {
-        DentalImage dentalImage = dentalImageRepository.findById(imageId)
-                .orElseThrow(() -> new IllegalArgumentException("Dental image not found"));
-        
-        // Delete from GridFS
-        ObjectId fileId = new ObjectId(dentalImage.getGridfsFileId());
-        gridFSBucket.delete(fileId);
-        
-        // Delete thumbnail if exists
-        if (dentalImage.getThumbnailGridfsId() != null) {
-            ObjectId thumbnailId = new ObjectId(dentalImage.getThumbnailGridfsId());
-            thumbnailGridFSBucket.delete(thumbnailId);
-        }
-        
-        // Delete metadata from PostgreSQL
+    public void deleteDentalImage(ClinicalRecordsActor actor, Long imageId) {
+        DentalImage dentalImage = findManageableImage(actor, imageId);
+        // DATA-03: delete the metadata row first. An orphaned GridFS blob is
+        // tolerable (harmless, reclaimable); broken metadata pointing at a
+        // deleted blob is not. Blob failures are logged, not thrown, so the
+        // row deletion stands.
         dentalImageRepository.delete(dentalImage);
-        
-        log.info("Deleted dental image {} and associated files", imageId);
+        try {
+            gridFSBucket.delete(parseStoredObjectId(dentalImage.getGridfsFileId()));
+        } catch (RuntimeException exception) {
+            log.warn("Clinical image {} original blob cleanup failed; orphaned", dentalImage.getId());
+        }
+        if (dentalImage.getThumbnailGridfsId() != null) {
+            try {
+                thumbnailGridFSBucket.delete(parseStoredObjectId(dentalImage.getThumbnailGridfsId()));
+            } catch (RuntimeException exception) {
+                log.warn("Clinical image {} thumbnail blob cleanup failed; orphaned", dentalImage.getId());
+            }
+        }
+        log.info("Deleted dental image {}", imageId);
     }
-    
+
     @Transactional
-    public DentalImageResponse updateImageMetadata(Long imageId, 
-                                                 String description, 
-                                                 String tags, 
-                                                 String toothNumber,
-                                                 Boolean isPrimary) {
-        DentalImage dentalImage = dentalImageRepository.findById(imageId)
-                .orElseThrow(() -> new IllegalArgumentException("Dental image not found"));
-        
-        if (description != null) dentalImage.setDescription(description);
-        if (tags != null) dentalImage.setTags(tags);
-        if (toothNumber != null) dentalImage.setToothNumber(toothNumber);
-        if (isPrimary != null) dentalImage.setIsPrimary(isPrimary);
-        
+    public DentalImageResponse updateImageMetadata(
+            ClinicalRecordsActor actor,
+            Long imageId,
+            String description,
+            String tags,
+            String toothNumber,
+            Boolean isPrimary) {
+        DentalImage dentalImage = findManageableImage(actor, imageId);
+        if (description != null) {
+            dentalImage.setDescription(description);
+        }
+        if (tags != null) {
+            dentalImage.setTags(tags);
+        }
+        if (toothNumber != null) {
+            dentalImage.setToothNumber(toothNumber);
+        }
+        if (isPrimary != null) {
+            dentalImage.setIsPrimary(isPrimary);
+        }
+
         DentalImage saved = dentalImageRepository.save(dentalImage);
-        log.info("Updated metadata for dental image {}", imageId);
-        
+        log.info("Updated dental image {} metadata", imageId);
         return toResponse(saved);
     }
-    
+
     @Transactional(readOnly = true)
-    public List<DentalImageResponse> getPatientImages(Long patientId) {
-        List<DentalImage> images = dentalImageRepository.findByPatientIdOrderByCreatedAtDesc(patientId);
-        return images.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    @Transactional(readOnly = true)
-    public List<DentalImageResponse> getClinicalNoteImages(Long clinicalNoteId) {
-        List<DentalImage> images = dentalImageRepository.findByClinicalNoteIdOrderByCreatedAtDesc(clinicalNoteId);
-        return images.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    @Transactional(readOnly = true)
-    public List<DentalImageResponse> getVisitImages(Long visitId) {
-        List<DentalImage> images = dentalImageRepository.findByVisitIdOrderByCreatedAtDesc(visitId);
-        return images.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    @Transactional(readOnly = true)
-    public List<DentalImageResponse> getPatientImagesByType(Long patientId, String imageType) {
-        List<DentalImage> images = dentalImageRepository.findByPatientIdAndImageType(patientId, imageType);
-        return images.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    @Transactional(readOnly = true)
-    public List<DentalImageResponse> getPatientImagesByTooth(Long patientId, String toothNumber) {
-        List<DentalImage> images = dentalImageRepository.findByPatientIdAndToothNumber(patientId, toothNumber);
-        return images.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    @Transactional(readOnly = true)
-    public List<DentalImageResponse> searchPatientImagesByTag(Long patientId, String tag) {
-        List<DentalImage> images = dentalImageRepository.findByPatientIdAndTag(patientId, tag);
-        return images.stream().map(this::toResponse).collect(Collectors.toList());
-    }
-    
-    private void validateImageFile(MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new IllegalArgumentException("File cannot be empty");
+    public List<DentalImageResponse> getPatientImages(ClinicalRecordsActor actor, Long patientId) {
+        long targetPatientId = ClinicalRecordsAccess.requirePositive(patientId);
+        List<DentalImage> images;
+        if (actor.isSystemAdmin() || ClinicalRecordsAccess.matchesPatient(actor, targetPatientId)) {
+            images = dentalImageRepository.findByPatientIdOrderByCreatedAtDesc(targetPatientId);
+        } else if (actor.isDentist()) {
+            images = dentalImageRepository.findByPatientIdAndDentistIdAndClinicIdOrderByCreatedAtDesc(
+                    targetPatientId,
+                    actor.userId(),
+                    actor.requiredClinicId());
+        } else {
+            throw new AccessDeniedException("Clinical image read access is unavailable");
         }
-        
-        if (file.getSize() > fileUploadConfig.getMaxFileSize()) {
-            throw new IllegalArgumentException("File size exceeds maximum allowed size");
+        return images.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DentalImageResponse> getClinicalNoteImages(
+            ClinicalRecordsActor actor,
+            Long clinicalNoteId) {
+        long targetClinicalNoteId = ClinicalRecordsAccess.requirePositive(clinicalNoteId);
+        List<DentalImage> images;
+        if (actor.isSystemAdmin()) {
+            images = dentalImageRepository.findByClinicalNoteIdOrderByCreatedAtDesc(targetClinicalNoteId);
+        } else if (actor.isPatient()) {
+            images = dentalImageRepository.findByClinicalNoteIdAndPatientIdOrderByCreatedAtDesc(
+                    targetClinicalNoteId,
+                    actor.userId());
+        } else if (actor.isDentist()) {
+            images = dentalImageRepository.findByClinicalNoteIdAndDentistIdAndClinicIdOrderByCreatedAtDesc(
+                    targetClinicalNoteId,
+                    actor.userId(),
+                    actor.requiredClinicId());
+        } else {
+            throw new AccessDeniedException("Clinical image read access is unavailable");
         }
-        
-        String contentType = file.getContentType();
-        if (contentType == null || !Arrays.asList(fileUploadConfig.getAllowedImageTypes()).contains(contentType)) {
-            throw new IllegalArgumentException("Invalid file type. Only image files are allowed");
+        return images.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DentalImageResponse> getVisitImages(ClinicalRecordsActor actor, Long visitId) {
+        long targetVisitId = ClinicalRecordsAccess.requirePositive(visitId);
+        List<DentalImage> images;
+        if (actor.isSystemAdmin()) {
+            images = dentalImageRepository.findByVisitIdOrderByCreatedAtDesc(targetVisitId);
+        } else if (actor.isPatient()) {
+            images = dentalImageRepository.findByVisitIdAndPatientIdOrderByCreatedAtDesc(targetVisitId, actor.userId());
+        } else if (actor.isDentist()) {
+            images = dentalImageRepository.findByVisitIdAndDentistIdAndClinicIdOrderByCreatedAtDesc(
+                    targetVisitId,
+                    actor.userId(),
+                    actor.requiredClinicId());
+        } else {
+            throw new AccessDeniedException("Clinical image read access is unavailable");
+        }
+        return images.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DentalImageResponse> getPatientImagesByType(
+            ClinicalRecordsActor actor,
+            Long patientId,
+            String imageType) {
+        long targetPatientId = ClinicalRecordsAccess.requirePositive(patientId);
+        requireNonBlank(imageType);
+        List<DentalImage> images;
+        if (actor.isSystemAdmin() || ClinicalRecordsAccess.matchesPatient(actor, targetPatientId)) {
+            images = dentalImageRepository.findByPatientIdAndImageTypeOrderByCreatedAtDesc(targetPatientId, imageType);
+        } else if (actor.isDentist()) {
+            images = dentalImageRepository.findByPatientIdAndDentistIdAndClinicIdAndImageTypeOrderByCreatedAtDesc(
+                    targetPatientId,
+                    actor.userId(),
+                    actor.requiredClinicId(),
+                    imageType);
+        } else {
+            throw new AccessDeniedException("Clinical image read access is unavailable");
+        }
+        return images.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DentalImageResponse> getPatientImagesByTooth(
+            ClinicalRecordsActor actor,
+            Long patientId,
+            String toothNumber) {
+        long targetPatientId = ClinicalRecordsAccess.requirePositive(patientId);
+        requireNonBlank(toothNumber);
+        List<DentalImage> images;
+        if (actor.isSystemAdmin() || ClinicalRecordsAccess.matchesPatient(actor, targetPatientId)) {
+            images = dentalImageRepository.findByPatientIdAndToothNumber(targetPatientId, toothNumber);
+        } else if (actor.isDentist()) {
+            images = dentalImageRepository.findByPatientIdAndDentistIdAndClinicIdAndToothNumber(
+                    targetPatientId,
+                    actor.userId(),
+                    actor.requiredClinicId(),
+                    toothNumber);
+        } else {
+            throw new AccessDeniedException("Clinical image read access is unavailable");
+        }
+        return images.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DentalImageResponse> searchPatientImagesByTag(
+            ClinicalRecordsActor actor,
+            Long patientId,
+            String tag) {
+        long targetPatientId = ClinicalRecordsAccess.requirePositive(patientId);
+        requireNonBlank(tag);
+        List<DentalImage> images;
+        if (actor.isSystemAdmin() || ClinicalRecordsAccess.matchesPatient(actor, targetPatientId)) {
+            images = dentalImageRepository.findByPatientIdAndTag(targetPatientId, tag);
+        } else if (actor.isDentist()) {
+            images = dentalImageRepository.findByPatientIdAndDentistIdAndClinicIdAndTag(
+                    targetPatientId,
+                    actor.userId(),
+                    actor.requiredClinicId(),
+                    tag);
+        } else {
+            throw new AccessDeniedException("Clinical image read access is unavailable");
+        }
+        return images.stream().map(this::toResponse).toList();
+    }
+
+    private ObjectId uploadOriginal(
+            SanitizedImage sanitized,
+            ClinicalRecordsAccess.WriteOwner owner,
+            String imageType,
+            String originalFilename) {
+        Document metadata = new Document()
+                .append("patientId", owner.patientId())
+                .append("dentistId", owner.dentistId())
+                .append("clinicId", owner.clinicId())
+                .append("imageType", imageType)
+                .append("contentType", sanitized.canonicalContentType());
+        try (InputStream inputStream = new ByteArrayInputStream(sanitized.canonicalBytes())) {
+            return gridFSBucket.uploadFromStream(
+                    originalFilename,
+                    inputStream,
+                    new GridFSUploadOptions().metadata(metadata));
+        } catch (IOException | RuntimeException exception) {
+            log.warn("Clinical image original upload failed");
+            throw new ClinicalDependencyUnavailableException(exception);
         }
     }
-    
-    private byte[] generateThumbnail(MultipartFile file) throws IOException {
-        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
-            Thumbnails.of(file.getInputStream())
-                    .size(fileUploadConfig.getThumbnailWidth(), fileUploadConfig.getThumbnailHeight())
-                    .outputFormat("jpg")
-                    .outputQuality(0.8)
-                    .toOutputStream(outputStream);
-            
-            return outputStream.toByteArray();
+
+    private String uploadThumbnail(
+            SanitizedImage sanitized,
+            ClinicalRecordsAccess.WriteOwner owner,
+            ObjectId originalFileId,
+            String originalFilename) {
+        if (sanitized.thumbnailBytes().length == 0) {
+            return null;
+        }
+        try {
+            Document metadata = new Document()
+                    .append("originalFileId", originalFileId.toString())
+                    .append("patientId", owner.patientId())
+                    .append("dentistId", owner.dentistId())
+                    .append("clinicId", owner.clinicId())
+                    .append("imageType", "THUMBNAIL");
+            ObjectId thumbnailId = thumbnailGridFSBucket.uploadFromStream(
+                    "thumb_" + originalFilename,
+                    new ByteArrayInputStream(sanitized.thumbnailBytes()),
+                    new GridFSUploadOptions().metadata(metadata));
+            return thumbnailId.toString();
+        } catch (RuntimeException exception) {
+            log.warn("Clinical image thumbnail upload failed");
+            return null;
         }
     }
-    
+
+    /**
+     * DATA-03 compensation: the PG row and the GridFS blobs are not atomic,
+     * so on any failure after a blob write the blobs are deleted
+     * best-effort before the exception propagates — no orphaned storage.
+     */
+    private void compensateFailedUpload(ObjectId originalFileId, String thumbnailFileId) {
+        if (originalFileId != null) {
+            try {
+                gridFSBucket.delete(originalFileId);
+            } catch (RuntimeException exception) {
+                log.warn("Clinical image original blob compensation failed");
+            }
+        }
+        if (thumbnailFileId != null) {
+            try {
+                thumbnailGridFSBucket.delete(new ObjectId(thumbnailFileId));
+            } catch (RuntimeException exception) {
+                log.warn("Clinical image thumbnail blob compensation failed");
+            }
+        }
+    }
+
+    private DentalImage findReadableImage(ClinicalRecordsActor actor, Long imageId) {
+        long targetImageId = ClinicalRecordsAccess.requirePositive(imageId);
+        Optional<DentalImage> image;
+        if (actor.isSystemAdmin()) {
+            image = dentalImageRepository.findById(targetImageId);
+        } else {
+            image = Optional.empty();
+            if (actor.isPatient()) {
+                image = dentalImageRepository.findByIdAndPatientId(targetImageId, actor.userId());
+            }
+            if (image.isEmpty() && actor.isDentist()) {
+                image = dentalImageRepository.findByIdAndDentistIdAndClinicId(
+                        targetImageId,
+                        actor.userId(),
+                        actor.requiredClinicId());
+            }
+            if (!actor.isPatient() && !actor.isDentist()) {
+                throw new AccessDeniedException("Clinical image read access is unavailable");
+            }
+        }
+        return image.orElseThrow(ClinicalResourceNotFoundException::new);
+    }
+
+    private DentalImage findManageableImage(ClinicalRecordsActor actor, Long imageId) {
+        long targetImageId = ClinicalRecordsAccess.requirePositive(imageId);
+        ClinicalRecordsAccess.requireClinicalManager(actor);
+        Optional<DentalImage> image = actor.isSystemAdmin()
+                ? dentalImageRepository.findById(targetImageId)
+                : dentalImageRepository.findByIdAndDentistIdAndClinicId(
+                        targetImageId,
+                        actor.userId(),
+                        actor.requiredClinicId());
+        return image.orElseThrow(ClinicalResourceNotFoundException::new);
+    }
+
+    private void validateLinks(
+            ClinicalRecordsActor actor,
+            ClinicalRecordsAccess.WriteOwner owner,
+            Long clinicalNoteId,
+            Long visitId) {
+        if (clinicalNoteId != null) {
+            ClinicalNote note = findManageableClinicalNote(actor, clinicalNoteId);
+            requireMatchingOwner(note, owner);
+        }
+        if (visitId != null) {
+            ServiceVisit visit = findManageableVisit(actor, visitId);
+            requireMatchingOwner(visit, owner);
+        }
+    }
+
+    private ClinicalNote findManageableClinicalNote(ClinicalRecordsActor actor, Long noteId) {
+        long targetNoteId = ClinicalRecordsAccess.requirePositive(noteId);
+        ClinicalRecordsAccess.requireClinicalManager(actor);
+        Optional<ClinicalNote> note = actor.isSystemAdmin()
+                ? clinicalNoteRepository.findById(targetNoteId)
+                : clinicalNoteRepository.findByIdAndDentistIdAndClinicId(
+                        targetNoteId,
+                        actor.userId(),
+                        actor.requiredClinicId());
+        return note.orElseThrow(ClinicalResourceNotFoundException::new);
+    }
+
+    private ServiceVisit findManageableVisit(ClinicalRecordsActor actor, Long visitId) {
+        long targetVisitId = ClinicalRecordsAccess.requirePositive(visitId);
+        ClinicalRecordsAccess.requireClinicalManager(actor);
+        Optional<ServiceVisit> visit = actor.isSystemAdmin()
+                ? serviceVisitRepository.findById(targetVisitId)
+                : serviceVisitRepository.findByIdAndDentistIdAndClinicId(
+                        targetVisitId,
+                        actor.userId(),
+                        actor.requiredClinicId());
+        return visit.orElseThrow(ClinicalResourceNotFoundException::new);
+    }
+
+    private void requireMatchingOwner(
+            ClinicalNote note,
+            ClinicalRecordsAccess.WriteOwner owner) {
+        if (!Objects.equals(note.getPatientId(), owner.patientId())
+                || !Objects.equals(note.getDentistId(), owner.dentistId())
+                || !Objects.equals(note.getClinicId(), owner.clinicId())) {
+            throw new InvalidClinicalRequestException();
+        }
+    }
+
+    private void requireMatchingOwner(
+            ServiceVisit visit,
+            ClinicalRecordsAccess.WriteOwner owner) {
+        if (!Objects.equals(visit.getPatientId(), owner.patientId())
+                || !Objects.equals(visit.getDentistId(), owner.dentistId())
+                || !Objects.equals(visit.getClinicId(), owner.clinicId())) {
+            throw new InvalidClinicalRequestException();
+        }
+    }
+
+    private void requireNonBlank(String value) {
+        if (value == null || value.isBlank()) {
+            throw new InvalidClinicalRequestException();
+        }
+    }
+
+    private String safeOriginalFilename(MultipartFile file) {
+        String filename = file.getOriginalFilename();
+        return filename == null || filename.isBlank() ? "dental-image" : filename;
+    }
+
+    private ObjectId parseStoredObjectId(String objectId) {
+        try {
+            return new ObjectId(objectId);
+        } catch (IllegalArgumentException exception) {
+            throw new ClinicalDependencyUnavailableException(exception);
+        }
+    }
+
     private DentalImageResponse toResponse(DentalImage dentalImage) {
         DentalImageResponse response = DentalImageResponse.builder()
                 .id(dentalImage.getId())
@@ -258,8 +511,6 @@ public class DentalImageService {
                 .clinicId(dentalImage.getClinicId())
                 .clinicalNoteId(dentalImage.getClinicalNoteId())
                 .visitId(dentalImage.getVisitId())
-                .gridfsFileId(dentalImage.getGridfsFileId())
-                .thumbnailGridfsId(dentalImage.getThumbnailGridfsId())
                 .originalFilename(dentalImage.getOriginalFilename())
                 .contentType(dentalImage.getContentType())
                 .fileSize(dentalImage.getFileSize())
@@ -271,29 +522,26 @@ public class DentalImageService {
                 .createdAt(dentalImage.getCreatedAt())
                 .updatedAt(dentalImage.getUpdatedAt())
                 .downloadUrl("/clinical-records/image/" + dentalImage.getId() + "/download")
-                .thumbnailUrl(dentalImage.getThumbnailGridfsId() != null ? 
-                        "/clinical-records/image/" + dentalImage.getId() + "/thumbnail" : null)
+                .thumbnailUrl(dentalImage.getThumbnailGridfsId() == null
+                        ? null
+                        : "/clinical-records/image/" + dentalImage.getId() + "/thumbnail")
                 .build();
-        
-        // Fetch names from services
+
         try {
             response.setPatientName(authServiceClient.getUserFullName(dentalImage.getPatientId()));
-        } catch (Exception e) {
-            log.warn("Failed to fetch patient name for id {}: {}", dentalImage.getPatientId(), e.getMessage());
+        } catch (Exception exception) {
+            log.warn("Failed to enrich dental image {} from a dependent service", dentalImage.getId());
         }
-        
         try {
             response.setDentistName(authServiceClient.getUserFullName(dentalImage.getDentistId()));
-        } catch (Exception e) {
-            log.warn("Failed to fetch dentist name for id {}: {}", dentalImage.getDentistId(), e.getMessage());
+        } catch (Exception exception) {
+            log.warn("Failed to enrich dental image {} from a dependent service", dentalImage.getId());
         }
-        
         try {
             response.setClinicName(clinicServiceClient.getClinic(dentalImage.getClinicId()).getName());
-        } catch (Exception e) {
-            log.warn("Failed to fetch clinic name for id {}: {}", dentalImage.getClinicId(), e.getMessage());
+        } catch (Exception exception) {
+            log.warn("Failed to enrich dental image {} from a dependent service", dentalImage.getId());
         }
-        
         return response;
     }
 }

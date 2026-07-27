@@ -21,6 +21,8 @@ public class AuditEntryResponse {
     private String actor;
     private String action;
     private String target;
+    private Long assertedUserId;
+    private Long assertedClinicId;
     private LocalDateTime timestamp;
     private Map<String, Object> context;
 } 

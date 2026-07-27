@@ -7,16 +7,45 @@ spring:
   config:
     import: optional:configserver:http://localhost:8888
 
-  data:
-    mongodb:
-      uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/dentistdss
-      database: dentistdss
+  mongodb:
+    uri: mongodb://dentistdss:${MONGO_INITDB_ROOT_PASSWORD}@localhost:27017/dentistdss?authSource=admin
+    database: dentistdss
 
   security:
     oauth2:
       resourceserver:
         jwt:
           jwk-set-uri: ${AUTH_SERVICE_URL:http://localhost:8081}/auth/oauth2/jwks
+
+jwt:
+  issuer: ${JWT_ISSUER:http://localhost:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
+
+# Service credentials: audit ingestion accepts only verified service callers
+# (currently auth-service) holding the audit:ingest scope. Empty key material
+# stays dormant at startup; verification then fails closed at request time.
+app:
+  # Tamper-evident storage (AUDIT-01): a single scheduler seals batches of
+  # content-hashed entries into a chained sequence; GET /audit/integrity
+  # (SYSTEM_ADMIN) re-verifies the chain. Single sealer by deployment
+  # (replicas: 1); the unique sequence index is the cross-JVM backstop.
+  audit:
+    sealing:
+      enabled: ${AUDIT_SEALING_ENABLED:true}
+      interval-ms: ${AUDIT_SEALING_INTERVAL_MS:60000}
+      initial-delay-ms: ${AUDIT_SEALING_INITIAL_DELAY_MS:30000}
+      batch-size: ${AUDIT_SEALING_BATCH_SIZE:1000}
+      max-rounds-per-tick: ${AUDIT_SEALING_MAX_ROUNDS_PER_TICK:10}
+  security:
+    service-auth:
+      audience: audit-service
+      trusted-keys:
+        auth:
+          key-id: ${SERVICE_AUTH_KEY_ID_AUTH:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:}
+          subject: auth-service
+          scopes:
+            - audit:ingest
 
 eureka:
   client:
@@ -33,7 +62,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues

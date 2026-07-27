@@ -6,15 +6,26 @@ spring:
     name: notification-service
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
 
   datasource:
     url: jdbc:postgresql://postgres:5432/dentistdss
-    username: dentistdss
-    password: ${POSTGRES_PASSWORD}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  # DATA-02 follow-up: schema migrations run in the standalone migrator
+  # Job (Helm pre-upgrade hook / compose one-shot) as the migration owner;
+  # this service boots with its least-privilege role and never sees the
+  # owner credential. Hibernate ddl-auto=validate remains the drift check.
+  flyway:
+    enabled: false
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -36,6 +47,10 @@ spring:
           timeout: 5000
           writetimeout: 5000
 
+jwt:
+  issuer: ${JWT_ISSUER:http://api-gateway:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
+
 eureka:
   client:
     serviceUrl:
@@ -53,7 +68,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues
@@ -78,3 +93,28 @@ app:
     base-url: ${BASE_URL:https://dentist.mizhifei.press}
   email:
     from-email: ${MAIL_USERNAME}
+  security:
+    service-auth:
+      private-key: ${SERVICE_AUTH_PRIVATE_KEY:}
+      key-id: ${SERVICE_AUTH_KEY_ID:}
+      service-name: notification-service
+      audience: notification-service
+      trusted-keys:
+        auth:
+          key-id: ${SERVICE_AUTH_KEY_ID_AUTH:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:}
+          subject: auth-service
+          scopes:
+            - notification:email
+        appointment:
+          key-id: ${SERVICE_AUTH_KEY_ID_APPOINTMENT:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_APPOINTMENT:}
+          subject: appointment-service
+          scopes:
+            - notification:send
+        clinicalrecords:
+          key-id: ${SERVICE_AUTH_KEY_ID_CLINICALRECORDS:}
+          public-key: ${SERVICE_AUTH_PUBLIC_KEY_CLINICALRECORDS:}
+          subject: clinical-records-service
+          scopes:
+            - notification:send

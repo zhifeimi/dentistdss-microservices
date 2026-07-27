@@ -1,160 +1,123 @@
 package press.mizhifei.dentist.gateway.service;
 
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
 
 import java.security.SecureRandom;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.regex.Pattern;
 
 /**
- * Service for managing user sessions across the API Gateway
- * Provides cryptographically secure session ID generation and management
- * Uses a single sessionId for both anonymous and authenticated users
- *
- * @author zhifeimi
- * @email zm377@uowmail.edu.au
- * @github https://github.com/zm377
+ * Manages server-issued anonymous session identifiers in Redis.
  */
-@Slf4j
 @Service
 public class AnonymousSessionService {
 
-    private static final String SESSION_ID_HEADER = "X-Session-ID";
+    private static final int SESSION_ID_BYTES = 32;
+    private static final int MAX_CREATE_ATTEMPTS = 3;
+    private static final Pattern NAMESPACE_PATTERN = Pattern.compile("[A-Za-z0-9._-]{1,64}");
+    private static final Pattern SESSION_ID_PATTERN = Pattern.compile("[A-Za-z0-9_-]{43}");
 
-    // In-memory storage for session mapping (in production, consider Redis or database)
-    private final ConcurrentMap<String, SessionInfo> sessionStore = new ConcurrentHashMap<>();
+    private final ReactiveStringRedisTemplate redisTemplate;
+    private final AnonymousSessionIssuanceLimiter issuanceLimiter;
+    private final Duration sessionTtl;
+    private final String keyPrefix;
     private final SecureRandom secureRandom = new SecureRandom();
 
+    public AnonymousSessionService(
+            ReactiveStringRedisTemplate redisTemplate,
+            AnonymousSessionIssuanceLimiter issuanceLimiter,
+            @Value("${app.security.anonymous-session.ttl:PT24H}")
+            Duration sessionTtl,
+            @Value("${app.security.anonymous-session.namespace:local}")
+            String namespace) {
+        if (sessionTtl == null || sessionTtl.isZero() || sessionTtl.isNegative()
+                || sessionTtl.toMillis() < 1) {
+            throw new IllegalArgumentException("Anonymous session TTL must be positive");
+        }
+        if (!StringUtils.hasText(namespace)
+                || !NAMESPACE_PATTERN.matcher(namespace).matches()) {
+            throw new IllegalArgumentException(
+                    "Anonymous session namespace must contain only letters, numbers, dots, underscores, or hyphens");
+        }
+        this.redisTemplate = redisTemplate;
+        this.issuanceLimiter = issuanceLimiter;
+        this.sessionTtl = sessionTtl;
+        this.keyPrefix = "gateway:anonymous-session:{" + namespace + "}:";
+    }
+
     /**
-     * Generates or retrieves a session
-     * @param existingSessionId existing session ID from client (if any)
-     * @return SessionInfo containing session details
+     * Reuses a valid server-issued session without extending its absolute lifetime,
+     * or atomically rate-limits and creates a replacement for the exact anonymous
+     * GenAI help route. Unknown client values are never adopted.
      */
-    public SessionInfo getOrCreateSession(String existingSessionId) {
-        if (StringUtils.hasText(existingSessionId) && sessionStore.containsKey(existingSessionId)) {
-            SessionInfo session = sessionStore.get(existingSessionId);
-            log.debug("Retrieved existing session: {}", existingSessionId);
-            return session;
+    public Mono<String> getOrCreateAnonymousSession(
+            String existingSessionId,
+            ServerHttpRequest request) {
+        return reuseSession(existingSessionId, request)
+                .switchIfEmpty(Mono.defer(() -> createSession(request, MAX_CREATE_ATTEMPTS)))
+                .onErrorMap(
+                        DataAccessException.class,
+                        error -> new ResponseStatusException(
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                "Anonymous session service unavailable",
+                                error));
+    }
+
+    private Mono<String> reuseSession(
+            String existingSessionId,
+            ServerHttpRequest request) {
+        if (!isValidSessionId(existingSessionId)) {
+            return Mono.empty();
         }
 
-        // Generate new cryptographically secure session
-        String sessionId = existingSessionId != null ? existingSessionId : generateSecureSessionId();
-
-        SessionInfo sessionInfo = SessionInfo.builder()
-                .sessionId(sessionId)
-                .createdAt(System.currentTimeMillis())
-                .lastAccessedAt(System.currentTimeMillis())
-                .authenticated(false)
-                .build();
-
-        sessionStore.put(sessionId, sessionInfo);
-        log.debug("Created new session: {}", sessionId);
-
-        return sessionInfo;
+        return Mono.defer(() -> redisTemplate.opsForValue().get(
+                        sessionKey(existingSessionId)))
+                .filter(marker -> issuanceLimiter.isBoundToRequest(request, marker))
+                .map(marker -> existingSessionId);
     }
 
-    /**
-     * Links a session to an authenticated user
-     * @param sessionId session ID to link
-     * @param userId authenticated user ID
-     * @param email user email
-     * @param roles user roles
-     * @param clinicId user clinic ID
-     * @return updated SessionInfo
-     */
-    public SessionInfo linkToAuthenticatedUser(String sessionId, String userId, String email,
-                                             String roles, String clinicId) {
-        SessionInfo session = sessionStore.get(sessionId);
-        if (session == null) {
-            // Create new session if not exists
-            session = getOrCreateSession(sessionId);
+    private Mono<String> createSession(
+            ServerHttpRequest request,
+            int attemptsRemaining) {
+        if (attemptsRemaining == 0) {
+            return Mono.error(new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Unable to allocate anonymous session"));
         }
 
-        SessionInfo updatedSession = session.toBuilder()
-                .authenticated(true)
-                .userId(userId)
-                .email(email)
-                .roles(roles)
-                .clinicId(clinicId)
-                .lastAccessedAt(System.currentTimeMillis())
-                .build();
-
-        sessionStore.put(sessionId, updatedSession);
-        log.debug("Linked session {} to user {}", sessionId, userId);
-
-        return updatedSession;
-    }
-
-    /**
-     * Updates the last accessed time for a session
-     * @param sessionId session ID
-     */
-    public void updateLastAccessed(String sessionId) {
-        SessionInfo session = sessionStore.get(sessionId);
-        if (session != null) {
-            SessionInfo updatedSession = session.toBuilder()
-                    .lastAccessedAt(System.currentTimeMillis())
-                    .build();
-            sessionStore.put(sessionId, updatedSession);
-        }
-    }
-
-    /**
-     * Generates a cryptographically secure session ID
-     * @return secure UUID-based session ID
-     */
-    private String generateSecureSessionId() {
-        // Generate a more secure session ID using SecureRandom
-        byte[] randomBytes = new byte[16];
-        secureRandom.nextBytes(randomBytes);
-
-        // Convert to UUID format for consistency
-        return UUID.nameUUIDFromBytes(randomBytes).toString();
-    }
-
-    /**
-     * Cleans up expired sessions (should be called periodically)
-     * @param maxAgeMs maximum age in milliseconds
-     */
-    public void cleanupExpiredSessions(long maxAgeMs) {
-        long currentTime = System.currentTimeMillis();
-        sessionStore.entrySet().removeIf(entry -> {
-            SessionInfo session = entry.getValue();
-            boolean expired = (currentTime - session.getLastAccessedAt()) > maxAgeMs;
-            if (expired) {
-                log.debug("Removing expired session: {}", entry.getKey());
-            }
-            return expired;
+        return Mono.defer(() -> {
+            String sessionId = generateSecureSessionId();
+            return issuanceLimiter.tryIssue(request, sessionId, sessionTtl)
+                    .flatMap(result -> switch (result) {
+                        case ISSUED -> Mono.just(sessionId);
+                        case LIMIT_EXCEEDED -> Mono.error(new ResponseStatusException(
+                                HttpStatus.TOO_MANY_REQUESTS,
+                                "Anonymous session issuance limit exceeded"));
+                        case COLLISION -> createSession(request, attemptsRemaining - 1);
+                    });
         });
     }
 
-    /**
-     * Gets session information by session ID
-     * @param sessionId session ID
-     * @return SessionInfo or null if not found
-     */
-    public SessionInfo getSession(String sessionId) {
-        return sessionStore.get(sessionId);
+    private boolean isValidSessionId(String sessionId) {
+        return StringUtils.hasText(sessionId) && SESSION_ID_PATTERN.matcher(sessionId).matches();
     }
 
-    /**
-     * Session information holder
-     */
-    @lombok.Data
-    @lombok.Builder(toBuilder = true)
-    @lombok.AllArgsConstructor
-    @lombok.NoArgsConstructor
-    public static class SessionInfo {
-        private String sessionId;
-        private boolean authenticated;
-        private String userId;
-        private String email;
-        private String roles;
-        private String clinicId;
-        private long createdAt;
-        private long lastAccessedAt;
+    private String generateSecureSessionId() {
+        byte[] randomBytes = new byte[SESSION_ID_BYTES];
+        secureRandom.nextBytes(randomBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    private String sessionKey(String sessionId) {
+        return keyPrefix + "marker:" + sessionId;
     }
 }

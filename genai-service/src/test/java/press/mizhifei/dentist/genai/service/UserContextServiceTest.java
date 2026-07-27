@@ -2,155 +2,197 @@ package press.mizhifei.dentist.genai.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 
-/**
- * Unit tests for UserContextService
- *
- * @author zhifeimi
- * @email zm377@uowmail.edu.au
- * @github https://github.com/zm377
- */
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 class UserContextServiceTest {
 
+    private static final String SESSION_ID = "S".repeat(43);
+    private static final String PROOF = "P".repeat(43);
+    private static final String SOURCE_FINGERPRINT = "a".repeat(64);
+
+    private AnonymousSessionRegistry anonymousSessionRegistry;
     private UserContextService userContextService;
 
     @BeforeEach
     void setUp() {
-        userContextService = new UserContextService();
+        anonymousSessionRegistry = mock(AnonymousSessionRegistry.class);
+        when(anonymousSessionRegistry.requireGatewayIssuedSession(SESSION_ID, PROOF))
+                .thenReturn(Mono.just(
+                        new AnonymousSessionRegistry.VerifiedAnonymousSession(
+                                SESSION_ID,
+                                SOURCE_FINGERPRINT)));
+        userContextService = new UserContextService(anonymousSessionRegistry);
     }
 
     @Test
-    void testExtractUserContext_AuthenticatedUser() {
-        // Given
+    void buildsAuthenticatedContextOnlyFromVerifiedJwtClaims() {
         ServerHttpRequest request = MockServerHttpRequest.get("/test")
-                .header("X-Session-ID", "session-123")
-                .header("X-User-ID", "user-456")
-                .header("X-User-Email", "john.doe@example.com")
-                .header("X-User-Roles", "DENTIST,CLINIC_ADMIN")
-                .header("X-Clinic-ID", "clinic-789")
+                .header("X-Session-ID", SESSION_ID)
+                .header("X-Gateway-Anonymous-Proof", "caller-controlled-proof")
+                .header("X-User-ID", "forged-user")
+                .header("X-User-Email", "attacker@example.com")
+                .header("X-User-Roles", "SYSTEM_ADMIN")
+                .header("X-Clinic-ID", "999")
                 .build();
 
-        // When
-        UserContextService.UserContext context = userContextService.extractUserContext(request);
+        UserContextService.UserContext context =
+                userContextService.extractUserContext(request, jwt());
 
-        // Then
-        assertNotNull(context);
-        assertEquals("session-123", context.getSessionId());
-        assertEquals("user-456", context.getUserId());
-        assertEquals("john.doe@example.com", context.getEmail());
-        assertEquals("clinic-789", context.getClinicId());
+        assertEquals(SESSION_ID, context.getSessionId());
+        assertEquals("42", context.getUserId());
+        assertEquals("dentist@example.com", context.getEmail());
+        assertEquals("9", context.getClinicId());
+        assertNull(context.getAnonymousSourceFingerprint());
         assertTrue(context.isAuthenticated());
-        assertEquals(2, context.getRoles().size());
-        assertTrue(context.getRoles().contains("DENTIST"));
-        assertTrue(context.getRoles().contains("CLINIC_ADMIN"));
+        assertEquals(List.of("DENTIST", "PATIENT").stream().sorted().toList(),
+                context.getRoles().stream().sorted().toList());
+        assertFalse(context.getRoles().contains("SYSTEM_ADMIN"));
+        verify(anonymousSessionRegistry, never()).requireGatewayIssuedSession(any(), any());
     }
 
     @Test
-    void testExtractUserContext_AnonymousUser() {
-        // Given
+    void forgedIdentityHeadersDoNotAuthenticateAnonymousHelp() {
         ServerHttpRequest request = MockServerHttpRequest.get("/test")
-                .header("X-Session-ID", "session-123")
+                .header("X-Session-ID", SESSION_ID)
+                .header("X-Gateway-Anonymous-Proof", PROOF)
+                .header("X-User-ID", "42")
+                .header("X-User-Email", "forged@example.com")
+                .header("X-User-Roles", "SYSTEM_ADMIN")
+                .header("X-Clinic-ID", "9")
                 .build();
 
-        // When
-        UserContextService.UserContext context = userContextService.extractUserContext(request);
-
-        // Then
-        assertNotNull(context);
-        assertEquals("session-123", context.getSessionId());
-        assertNull(context.getUserId());
-        assertNull(context.getEmail());
-        assertNull(context.getClinicId());
-        assertFalse(context.isAuthenticated());
-        assertTrue(context.getRoles().isEmpty());
+        StepVerifier.create(userContextService.extractAnonymousUserContext(request))
+                .assertNext(context -> {
+                    assertEquals(SESSION_ID, context.getSessionId());
+                    assertEquals(SOURCE_FINGERPRINT,
+                            context.getAnonymousSourceFingerprint());
+                    assertNull(context.getUserId());
+                    assertNull(context.getEmail());
+                    assertNull(context.getClinicId());
+                    assertFalse(context.isAuthenticated());
+                    assertTrue(context.getRoles().isEmpty());
+                })
+                .verifyComplete();
     }
 
     @Test
-    void testGetPrimaryRole_AuthenticatedUser() {
-        // Given
+    void doesNotGenerateFallbackForRejectedAnonymousSessionOrMissingProof() {
+        when(anonymousSessionRegistry.requireGatewayIssuedSession(SESSION_ID, null))
+                .thenReturn(Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN)));
+
+        StepVerifier.create(userContextService.extractAnonymousUserContext(
+                        MockServerHttpRequest.get("/test")
+                                .header("X-Session-ID", SESSION_ID)
+                                .build()))
+                .expectErrorSatisfies(error -> {
+                    ResponseStatusException statusException =
+                            (ResponseStatusException) error;
+                    assertEquals(HttpStatus.FORBIDDEN,
+                            statusException.getStatusCode());
+                })
+                .verify();
+    }
+
+    @Test
+    void rejectsNonNumericAuthenticatedUserBeforeProviderUse() {
+        ServerHttpRequest request = MockServerHttpRequest.get("/test")
+                .header("X-Session-ID", SESSION_ID)
+                .build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> userContextService.extractUserContext(request, jwt("user-42")));
+    }
+
+    @Test
+    void selectsHighestPriorityRole() {
         UserContextService.UserContext context = UserContextService.UserContext.builder()
                 .authenticated(true)
-                .roles(java.util.Arrays.asList("PATIENT", "DENTIST"))
+                .roles(Arrays.asList("PATIENT", "DENTIST"))
                 .build();
 
-        // When
-        String primaryRole = userContextService.getPrimaryRole(context);
-
-        // Then
-        assertEquals("DENTIST", primaryRole); // DENTIST has higher priority than PATIENT
+        assertEquals("DENTIST", userContextService.getPrimaryRole(context));
     }
 
     @Test
-    void testGetPrimaryRole_AnonymousUser() {
-        // Given
+    void usesAnonymousRoleForPublicContext() {
         UserContextService.UserContext context = UserContextService.UserContext.builder()
                 .authenticated(false)
-                .roles(java.util.Collections.emptyList())
+                .roles(List.of())
                 .build();
 
-        // When
-        String primaryRole = userContextService.getPrimaryRole(context);
-
-        // Then
-        assertEquals("ANONYMOUS", primaryRole);
+        assertEquals("ANONYMOUS", userContextService.getPrimaryRole(context));
     }
 
     @Test
-    void testHasRole() {
-        // Given
+    void checksAssignedRoles() {
         UserContextService.UserContext context = UserContextService.UserContext.builder()
-                .roles(java.util.Arrays.asList("DENTIST", "CLINIC_ADMIN"))
+                .roles(Arrays.asList("DENTIST", "CLINIC_ADMIN"))
                 .build();
 
-        // When & Then
         assertTrue(userContextService.hasRole(context, "DENTIST"));
-        assertTrue(userContextService.hasRole(context, "CLINIC_ADMIN"));
-        assertFalse(userContextService.hasRole(context, "PATIENT"));
-    }
-
-    @Test
-    void testHasAnyRole() {
-        // Given
-        UserContextService.UserContext context = UserContextService.UserContext.builder()
-                .roles(java.util.Arrays.asList("DENTIST"))
-                .build();
-
-        // When & Then
-        assertTrue(userContextService.hasAnyRole(context, "DENTIST", "PATIENT"));
-        assertTrue(userContextService.hasAnyRole(context, "PATIENT", "DENTIST"));
+        assertTrue(userContextService.hasAnyRole(context, "PATIENT", "CLINIC_ADMIN"));
         assertFalse(userContextService.hasAnyRole(context, "PATIENT", "RECEPTIONIST"));
     }
 
     @Test
-    void testGetDisplayName_AuthenticatedUser() {
-        // Given
+    void derivesDisplayNameFromVerifiedEmail() {
         UserContextService.UserContext context = UserContextService.UserContext.builder()
                 .authenticated(true)
                 .email("john.doe@example.com")
                 .build();
 
-        // When
-        String displayName = userContextService.getDisplayName(context);
-
-        // Then
-        assertEquals("John doe", displayName);
+        assertEquals("John doe", userContextService.getDisplayName(context));
     }
 
     @Test
-    void testGetDisplayName_AnonymousUser() {
-        // Given
+    void usesGuestDisplayNameForAnonymousContext() {
         UserContextService.UserContext context = UserContextService.UserContext.builder()
                 .authenticated(false)
                 .build();
 
-        // When
-        String displayName = userContextService.getDisplayName(context);
+        assertEquals("Guest", userContextService.getDisplayName(context));
+    }
 
-        // Then
-        assertEquals("Guest", displayName);
+    private Jwt jwt() {
+        return jwt("42");
+    }
+
+    private Jwt jwt(String subject) {
+        return Jwt.withTokenValue("token")
+                .header("alg", "RS256")
+                .issuer("https://issuer.example")
+                .audience(List.of("dentistdss-api"))
+                .subject(subject)
+                .issuedAt(Instant.now().minusSeconds(5))
+                .notBefore(Instant.now().minusSeconds(5))
+                .expiresAt(Instant.now().plusSeconds(300))
+                .claim("jti", "token-id")
+                .claim("tokenType", "access")
+                .claim("email", "dentist@example.com")
+                .claim("roles", List.of("DENTIST", "PATIENT"))
+                .claim("clinicId", 9L)
+                .build();
     }
 }

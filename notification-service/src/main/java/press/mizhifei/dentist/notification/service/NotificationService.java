@@ -1,10 +1,11 @@
 package press.mizhifei.dentist.notification.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.notification.dto.NotificationRequest;
@@ -127,18 +128,25 @@ public class NotificationService {
     }
     
     @Transactional(readOnly = true)
-    public List<NotificationResponse> getUserNotifications(Long userId) {
+    public List<NotificationResponse> getUserNotifications(
+            Long userId,
+            long authenticatedUserId) {
+        requireSelf(userId, authenticatedUserId);
         return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId)
                 .stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
-    
+
     @Transactional
-    public NotificationResponse markAsRead(Long notificationId) {
-        Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new IllegalArgumentException("Notification not found"));
-        
+    public NotificationResponse markAsRead(
+            Long notificationId,
+            long authenticatedUserId) {
+        Notification notification = notificationRepository
+                .findByIdAndUserId(notificationId, authenticatedUserId)
+                .orElseThrow(() -> new AccessDeniedException(
+                        "Notification access is limited to the owner"));
+
         if (notification.getReadAt() == null) {
             notification.setReadAt(LocalDateTime.now());
             if (notification.getStatus() == NotificationStatus.SENT) {
@@ -146,12 +154,13 @@ public class NotificationService {
             }
             notificationRepository.save(notification);
         }
-        
+
         return toResponse(notification);
     }
-    
+
     @Transactional(readOnly = true)
-    public long getUnreadCount(Long userId) {
+    public long getUnreadCount(Long userId, long authenticatedUserId) {
+        requireSelf(userId, authenticatedUserId);
         return notificationRepository.countUnreadByUserId(userId);
     }
     
@@ -165,6 +174,13 @@ public class NotificationService {
         }
     }
     
+    private void requireSelf(Long requestedUserId, long authenticatedUserId) {
+        if (!requestedUserId.equals(authenticatedUserId)) {
+            throw new AccessDeniedException(
+                    "Notification access is limited to the current user");
+        }
+    }
+
     private String processTemplate(String template, Map<String, String> variables) {
         if (variables == null || variables.isEmpty()) {
             return template;

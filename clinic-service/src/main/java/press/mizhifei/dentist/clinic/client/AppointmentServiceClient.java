@@ -18,7 +18,10 @@ import java.util.List;
  * @github https://github.com/zm377
  *
  */
-@FeignClient(name = "appointment-service", path = "/appointment")
+@FeignClient(
+        name = "appointment-service",
+        path = "/appointment",
+        configuration = AppointmentServiceFeignConfiguration.class)
 public interface AppointmentServiceClient {
     
     @GetMapping("/patient/{patientId}/clinic/{clinicId}/last-completed")

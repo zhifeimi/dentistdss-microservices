@@ -24,14 +24,14 @@ import java.time.LocalDateTime;
 @Table(name = "clinics")
 public class Clinic {
 
+    // clinics.id is a PostgreSQL identity column shared with clinic-service's
+    // IDENTITY mapping. Map it as IDENTITY here too: Hibernate 7 inserts via
+    // RETURNING, and schema validation must not expect a clinic_id_seq
+    // sequence — an identity-owned sequence is invisible to Hibernate's
+    // PostgreSQL metadata extraction, so a SEQUENCE generator here would fail
+    // ddl-auto=validate at boot on the production schema.
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "clinic_id_seq")
-    @SequenceGenerator(
-        name = "clinic_id_seq",
-        sequenceName = "clinic_id_seq",
-        allocationSize = 1,
-        initialValue = 100
-    )
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(unique = true)

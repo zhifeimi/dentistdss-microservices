@@ -113,7 +113,11 @@ public class AIPromptService {
         """;
     
     public String getSystemPrompt(String agent) {
-        return switch (agent.toLowerCase()) {
+        // Exact match on the gateway route's lowercase agent path segment;
+        // anything else (including case variants) falls back to the help
+        // desk prompt. Deliberately no case conversion: prompt selection is
+        // not locale- or case-insensitive matching.
+        return switch (agent) {
             case "help" -> HELP_DESK_SYSTEM_PROMPT;
             case "receptionist" -> RECEPTIONIST_SYSTEM_PROMPT;
             case "aidentist" -> AI_DENTIST_SYSTEM_PROMPT;

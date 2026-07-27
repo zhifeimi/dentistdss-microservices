@@ -44,6 +44,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
+    @ExceptionHandler(ServiceNotFoundException.class)
+    public ResponseEntity<ApiResponse<String>> handleServiceNotFoundException() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error("Service not found"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<String>> handleGenericException(Exception ex) {
         ApiResponse<String> response = ApiResponse.error("An error occurred: " + ex.getMessage());

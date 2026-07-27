@@ -1,163 +1,217 @@
 package press.mizhifei.dentist.gateway.filter;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
-import press.mizhifei.dentist.gateway.security.JwtTokenProvider;
+import press.mizhifei.dentist.gateway.config.GatewayRequestMatchers;
+import press.mizhifei.dentist.gateway.security.GenAIServiceTokenIssuer;
+import press.mizhifei.dentist.gateway.service.AnonymousSessionProofService;
 import press.mizhifei.dentist.gateway.service.AnonymousSessionService;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
 /**
- * Filter for managing user sessions and header propagation
- * Handles both anonymous and authenticated users, ensuring proper session tracking
- * Uses a single sessionId for both anonymous and authenticated users
- *
- * @author zhifeimi
- * @email zm377@uowmail.edu.au
- * @github https://github.com/zm377
+ * Removes caller-supplied identity headers and adds metadata derived only from
+ * the verified Spring Security JWT.
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AnonymousSessionFilter implements GlobalFilter, Ordered {
 
+    private static final String SESSION_ID_HEADER = "X-Session-ID";
+    private static final String ANONYMOUS_PROOF_HEADER = "X-Gateway-Anonymous-Proof";
+    private static final String SERVICE_AUTH_HEADER = GenAIServiceTokenIssuer.HEADER_NAME;
+    /**
+     * Header carrying the shared inter-service credential defined by
+     * security-common's {@code ServiceTokenConstants#HEADER_NAME}. The literal
+     * is duplicated here on purpose: the gateway must not depend on
+     * security-common, and any caller-supplied value on this header is always
+     * forged — service credentials are only ever minted cluster-internally by
+     * the calling service, never through the gateway.
+     */
+    private static final String SERVICE_CREDENTIAL_HEADER = "X-Service-Authorization";
+    private static final String USER_ID_HEADER = "X-User-ID";
+    private static final String USER_EMAIL_HEADER = "X-User-Email";
+    private static final String USER_ROLES_HEADER = "X-User-Roles";
+    private static final String CLINIC_ID_HEADER = "X-Clinic-ID";
+    private static final List<String> TRUSTED_HEADERS = List.of(
+            SESSION_ID_HEADER,
+            ANONYMOUS_PROOF_HEADER,
+            SERVICE_AUTH_HEADER,
+            SERVICE_CREDENTIAL_HEADER,
+            USER_ID_HEADER,
+            USER_EMAIL_HEADER,
+            USER_ROLES_HEADER,
+            CLINIC_ID_HEADER);
+
     private final AnonymousSessionService anonymousSessionService;
-    private final JwtTokenProvider jwtTokenProvider;
+    private final AnonymousSessionProofService anonymousSessionProofService;
+    private final GenAIServiceTokenIssuer serviceTokenIssuer;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        ServerHttpRequest request = exchange.getRequest();
-        String path = request.getPath().toString();
+        String existingSessionId = exchange.getRequest().getHeaders().getFirst(SESSION_ID_HEADER);
+        ServerWebExchange sanitizedExchange = sanitizeIdentityHeaders(exchange);
+        String path = sanitizedExchange.getRequest().getPath().value();
 
-        // Skip session management for non-relevant endpoints
         if (shouldSkipSessionManagement(path)) {
+            return chain.filter(sanitizedExchange);
+        }
+
+        return exchange.getPrincipal()
+                .ofType(JwtAuthenticationToken.class)
+                .filter(authentication -> authentication.isAuthenticated())
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(authentication -> authentication
+                        .map(value -> addAuthenticatedContext(
+                                sanitizedExchange,
+                                chain,
+                                value))
+                        .orElseGet(() -> addAnonymousContext(
+                                sanitizedExchange,
+                                chain,
+                                existingSessionId)));
+    }
+
+    private Mono<Void> addAuthenticatedContext(
+            ServerWebExchange exchange,
+            GatewayFilterChain chain,
+            JwtAuthenticationToken authentication) {
+        String sessionId = authenticatedSessionId(authentication);
+        ServerHttpRequest request = exchange.getRequest().mutate()
+                .headers(headers -> {
+                    headers.set(SESSION_ID_HEADER, sessionId);
+                    setHeaderIfPresent(headers, USER_ID_HEADER, authentication.getToken().getSubject());
+                    setHeaderIfPresent(
+                            headers,
+                            USER_EMAIL_HEADER,
+                            authentication.getToken().getClaimAsString("email"));
+                    setHeaderIfPresent(headers, USER_ROLES_HEADER, rolesClaim(authentication));
+                    setHeaderIfPresent(
+                            headers,
+                            CLINIC_ID_HEADER,
+                            claimAsString(authentication, "clinicId"));
+                })
+                .build();
+        exchange.getResponse().getHeaders().set(SESSION_ID_HEADER, sessionId);
+        return chain.filter(exchange.mutate().request(request).build());
+    }
+
+    private Mono<Void> addAnonymousContext(
+            ServerWebExchange exchange,
+            GatewayFilterChain chain,
+            String existingSessionId) {
+        if (!GatewayRequestMatchers.isAnonymousHelp(exchange.getRequest())
+                || StringUtils.hasText(exchange.getRequest().getHeaders()
+                        .getFirst(HttpHeaders.AUTHORIZATION))) {
             return chain.filter(exchange);
         }
 
-        // Get existing session ID from request headers
-        String existingSessionId = request.getHeaders().getFirst("X-Session-ID");
-
-        // Check if user is authenticated
-        return ReactiveSecurityContextHolder.getContext()
-                .cast(org.springframework.security.core.context.SecurityContext.class)
-                .map(securityContext -> securityContext.getAuthentication())
-                .cast(Authentication.class)
-                .flatMap(authentication -> {
-                    if (authentication != null && authentication.isAuthenticated()) {
-                        // Handle authenticated user
-                        return handleAuthenticatedUserWithResponse(exchange, chain, existingSessionId, authentication);
-                    } else {
-                        // Handle anonymous user
-                        return handleAnonymousUserWithResponse(exchange, chain, existingSessionId);
-                    }
-                })
-                .switchIfEmpty(Mono.<Void>defer(() -> {
-                    // No security context - handle as anonymous user
-                    return handleAnonymousUserWithResponse(exchange, chain, existingSessionId);
-                }));
+        return anonymousSessionService.getOrCreateAnonymousSession(
+                        existingSessionId,
+                        exchange.getRequest())
+                .flatMap(sessionId -> anonymousSessionProofService.issueProof(
+                                exchange.getRequest(),
+                                sessionId)
+                        .flatMap(proof -> serviceTokenIssuer.issueAnonymousHelpToken()
+                                .flatMap(serviceToken -> {
+                                    ServerHttpRequest request = exchange.getRequest().mutate()
+                                            .headers(headers -> {
+                                                headers.set(SESSION_ID_HEADER, sessionId);
+                                                headers.set(ANONYMOUS_PROOF_HEADER, proof);
+                                                headers.set(
+                                                        SERVICE_AUTH_HEADER,
+                                                        "Bearer " + serviceToken);
+                                            })
+                                            .build();
+                                    exchange.getResponse().getHeaders().set(
+                                            SESSION_ID_HEADER,
+                                            sessionId);
+                                    return chain.filter(exchange.mutate()
+                                            .request(request)
+                                            .build());
+                                })));
     }
 
-    /**
-     * Handles authenticated users by linking their session to their user account
-     * Also adds session ID to response headers for frontend
-     */
-    private Mono<Void> handleAuthenticatedUserWithResponse(ServerWebExchange exchange, GatewayFilterChain chain,
-                                                          String existingSessionId, Authentication authentication) {
-        ServerHttpRequest request = exchange.getRequest();
+    private ServerWebExchange sanitizeIdentityHeaders(ServerWebExchange exchange) {
+        ServerHttpRequest request = exchange.getRequest().mutate()
+                .headers(headers -> TRUSTED_HEADERS.forEach(headers::remove))
+                .build();
+        return exchange.mutate().request(request).build();
+    }
 
-        // Extract JWT token and user information
-        String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        if (StringUtils.hasText(authHeader) && authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-
-            String userId = jwtTokenProvider.getUserIdFromJWT(token);
-            String email = jwtTokenProvider.getEmailFromJWT(token);
-            String roles = jwtTokenProvider.getRolesFromJWT(token);
-            String clinicId = jwtTokenProvider.getClinicIdFromJWT(token);
-
-            // Link session to authenticated user
-            AnonymousSessionService.SessionInfo sessionInfo =
-                    anonymousSessionService.linkToAuthenticatedUser(
-                            existingSessionId, userId, email, roles, clinicId);
-
-            // Add headers for downstream services
-            ServerHttpRequest modifiedRequest = request.mutate()
-                    .header("X-Session-ID", sessionInfo.getSessionId())
-                    .header("X-User-ID", userId != null ? userId : "")
-                    .header("X-User-Email", email != null ? email : "")
-                    .header("X-User-Roles", roles != null ? roles : "")
-                    .header("X-Clinic-ID", clinicId != null ? clinicId : "")
-                    .build();
-
-            log.debug("Authenticated user session - SessionID: {}, UserID: {}",
-                    sessionInfo.getSessionId(), userId);
-
-            // Add session ID to response headers for frontend
-            return chain.filter(exchange.mutate().request(modifiedRequest).build())
-                    .then(Mono.fromRunnable(() -> {
-                        exchange.getResponse().getHeaders().add("X-Session-ID", sessionInfo.getSessionId());
-                        log.debug("Added session ID to response headers: {}", sessionInfo.getSessionId());
-                    }));
+    private String authenticatedSessionId(JwtAuthenticationToken authentication) {
+        String subject = authentication.getToken().getSubject();
+        String sessionFamilyId = authentication.getToken().getClaimAsString("sessionFamilyId");
+        if (!StringUtils.hasText(subject) || !StringUtils.hasText(sessionFamilyId)) {
+            throw new IllegalStateException(
+                    "Verified access token requires subject and session family claims");
         }
 
-        // Fallback to anonymous handling if token extraction fails
-        return handleAnonymousUserWithResponse(exchange, chain, existingSessionId);
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest((subject + (char) 0x1F + sessionFamilyId)
+                            .getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
-    /**
-     * Handles anonymous users by creating or retrieving their session
-     * Also adds session ID to response headers for frontend
-     */
-    private Mono<Void> handleAnonymousUserWithResponse(ServerWebExchange exchange, GatewayFilterChain chain,
-                                                      String existingSessionId) {
-        // Get or create session
-        AnonymousSessionService.SessionInfo sessionInfo =
-                anonymousSessionService.getOrCreateSession(existingSessionId);
-
-        // Add headers for downstream services
-        ServerHttpRequest modifiedRequest = exchange.getRequest().mutate()
-                .header("X-Session-ID", sessionInfo.getSessionId())
-                .header("X-User-ID", "") // Empty for anonymous users
-                .header("X-User-Email", "") // Empty for anonymous users
-                .header("X-User-Roles", "") // Empty for anonymous users
-                .header("X-Clinic-ID", "") // Empty for anonymous users
-                .build();
-
-        log.debug("Anonymous user session - SessionID: {}", sessionInfo.getSessionId());
-
-        // Add session ID to response headers for frontend
-        return chain.filter(exchange.mutate().request(modifiedRequest).build())
-                .then(Mono.fromRunnable(() -> {
-                    exchange.getResponse().getHeaders().add("X-Session-ID", sessionInfo.getSessionId());
-                    log.debug("Added session ID to response headers: {}", sessionInfo.getSessionId());
-                }));
+    private String rolesClaim(JwtAuthenticationToken authentication) {
+        Object claim = authentication.getToken().getClaim("roles");
+        if (claim instanceof Collection<?> roles) {
+            return roles.stream()
+                    .map(String::valueOf)
+                    .filter(StringUtils::hasText)
+                    .collect(Collectors.joining(","));
+        }
+        return claim == null ? null : String.valueOf(claim);
     }
 
-    /**
-     * Determines if session management should be skipped for this path
-     */
+    private String claimAsString(JwtAuthenticationToken authentication, String claimName) {
+        Object claim = authentication.getToken().getClaim(claimName);
+        return claim == null ? null : String.valueOf(claim);
+    }
+
+    private void setHeaderIfPresent(HttpHeaders headers, String name, String value) {
+        if (StringUtils.hasText(value)) {
+            headers.set(name, value);
+        }
+    }
+
     private boolean shouldSkipSessionManagement(String path) {
-        // Skip for auth endpoints, actuator, swagger, etc.
-        return path.startsWith("/api/auth/") ||
-               path.startsWith("/oauth2/") ||
-               path.startsWith("/login/oauth2/") ||
-               path.startsWith("/actuator/") ||
-               path.startsWith("/v3/api-docs") ||
-               path.startsWith("/swagger-ui") ||
-               path.startsWith("/admin");
+        return path.equals("/api/auth")
+                || path.startsWith("/api/auth/")
+                || path.equals("/oauth2")
+                || path.startsWith("/oauth2/")
+                || path.equals("/actuator")
+                || path.startsWith("/actuator/")
+                || path.equals("/v3/api-docs")
+                || path.startsWith("/v3/api-docs/")
+                || path.equals("/swagger-ui.html")
+                || path.startsWith("/swagger-ui/")
+                || path.endsWith("/v3/api-docs");
     }
 
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE; // Execute before JWT authentication filter
+        return Ordered.HIGHEST_PRECEDENCE;
     }
 }

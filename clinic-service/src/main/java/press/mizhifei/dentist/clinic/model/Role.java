@@ -1,5 +1,7 @@
 package press.mizhifei.dentist.clinic.model;
 
+import java.util.Locale;
+
 /**
  * Role enum for clinic service
  *
@@ -16,6 +18,9 @@ public enum Role {
     PATIENT;
 
     public static Role fromString(String role) {
-        return Role.valueOf(role.toUpperCase());
+        if (role == null) {
+            throw new IllegalArgumentException("role is required");
+        }
+        return Role.valueOf(role.toUpperCase(Locale.ROOT));
     }
 }

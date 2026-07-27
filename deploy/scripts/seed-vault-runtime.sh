@@ -45,6 +45,9 @@ umask 077
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 MONGO_PASSWORD="$(openssl rand -hex 32)"
 SPRING_CONFIG_PASS="$(openssl rand -hex 32)"
+REDIS_PASSWORD="$(openssl rand -hex 32)"
+ANONYMOUS_SESSION_FINGERPRINT_KEY="$(openssl rand -hex 32)"
+EMAIL_VERIFICATION_CODE_PEPPER="$(openssl rand -hex 32)"
 JWT_RSA_KEY_ID="dentistdss-${ENVIRONMENT}-$(date -u +%Y%m%d)"
 
 openssl genpkey \
@@ -90,6 +93,9 @@ jq -n \
   --arg mongo_password "${MONGO_PASSWORD}" \
   --arg spring_config_user "config-client" \
   --arg spring_config_pass "${SPRING_CONFIG_PASS}" \
+  --arg redis_password "${REDIS_PASSWORD}" \
+  --arg fingerprint_key "${ANONYMOUS_SESSION_FINGERPRINT_KEY}" \
+  --arg code_pepper "${EMAIL_VERIFICATION_CODE_PEPPER}" \
   --arg jwt_private "${JWT_RSA_PRIVATE_KEY}" \
   --arg jwt_public "${JWT_RSA_PUBLIC_KEY}" \
   --arg jwt_key_id "${JWT_RSA_KEY_ID}" \
@@ -105,6 +111,9 @@ jq -n \
       MONGO_INITDB_ROOT_PASSWORD: $mongo_password,
       SPRING_CONFIG_USER: $spring_config_user,
       SPRING_CONFIG_PASS: $spring_config_pass,
+      REDIS_PASSWORD: $redis_password,
+      ANONYMOUS_SESSION_FINGERPRINT_KEY: $fingerprint_key,
+      EMAIL_VERIFICATION_CODE_PEPPER: $code_pepper,
       JWT_RSA_PRIVATE_KEY: $jwt_private,
       JWT_RSA_PUBLIC_KEY: $jwt_public,
       JWT_RSA_KEY_ID: $jwt_key_id,
@@ -113,15 +122,11 @@ jq -n \
       MAIL_HOST: $mail_host,
       MAIL_PORT: $mail_port,
       MAIL_USERNAME: $mail_username,
-      MAIL_PASSWORD: $mail_password,
-      SPRING_DATA_MONGODB_URI: (
-        "mongodb://dentistdss:" + $mongo_password +
-        "@mongo:27017/dentistdss?authSource=admin"
-      ),
-      MONGODB_URI: (
-        "mongodb://dentistdss:" + $mongo_password +
-        "@mongo:27017/dentistdss_files?authSource=admin"
-      )
+      MAIL_PASSWORD: $mail_password
+      # DATA-02: the legacy root-user MONGODB_URI/SPRING_DATA_MONGODB_URI keys
+      # are intentionally gone — per-service mongo URIs live in the
+      # db-credentials/* records (seed-vault-db-credentials.sh); no workload
+      # may consume a root URI anymore.
     }
   }' >"${TEMP_DIR}/payload.json"
 

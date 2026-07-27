@@ -9,12 +9,18 @@ spring:
 
   datasource:
     url: jdbc:postgresql://postgres:5432/dentistdss
-    username: dentistdss
-    password: ${POSTGRES_PASSWORD}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  # DATA-02 follow-up: schema migrations run in the standalone migrator
+  # Job (Helm pre-upgrade hook / compose one-shot) as the migration owner;
+  # this service boots with its least-privilege role and never sees the
+  # owner credential. Hibernate ddl-auto=validate remains the drift check.
+  flyway:
+    enabled: false
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect

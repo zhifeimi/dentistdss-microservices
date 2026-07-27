@@ -6,6 +6,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.scheduling.annotation.EnableAsync;
+import press.mizhifei.dentist.security.ServletJwtSecurityAutoConfiguration;
 
 /**
  *
@@ -14,7 +15,13 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * @github https://github.com/zm377
  *
  */
-@SpringBootApplication
+// auth-service ISSUES user JWTs; it never validates them as a resource
+// server and intentionally has no jwk-set-uri/jwt resource-server
+// configuration. The shared servlet JWT resource-server autoconfiguration
+// (brought in by security-common for the outbound service-token support)
+// would demand those decoder inputs at startup, so it is excluded here.
+// The service's own security filter chain is defined locally.
+@SpringBootApplication(exclude = ServletJwtSecurityAutoConfiguration.class)
 @EnableDiscoveryClient
 @EnableFeignClients
 @EnableAsync

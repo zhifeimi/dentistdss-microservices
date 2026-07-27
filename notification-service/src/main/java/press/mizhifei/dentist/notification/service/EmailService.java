@@ -10,7 +10,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
-import press.mizhifei.dentist.notification.client.AuthServiceClient;
+import press.mizhifei.dentist.notification.client.UserProfileContactClient;
+import press.mizhifei.dentist.notification.exception.EmailSendException;
 import java.util.Map;
 
 /**
@@ -26,14 +27,14 @@ import java.util.Map;
 public class EmailService {
 
     private final JavaMailSender mailSender;
-    private final AuthServiceClient authServiceClient;
+    private final UserProfileContactClient userProfileContactClient;
 
     @Value("${app.email.from-email:${spring.mail.username}}")
     private String fromEmail;
-    
+
     public void sendEmail(Long userId, String subject, String body) {
         try {
-            String userEmail = authServiceClient.getUserEmail(userId);
+            String userEmail = userProfileContactClient.getUserEmail(userId);
             sendEmail(userEmail, subject, body, false);
         } catch (Exception e) {
             log.error("Failed to fetch email for user {}: {}", userId, e.getMessage());
@@ -54,7 +55,7 @@ public class EmailService {
             log.info("Email sent successfully to {}", to);
         } catch (Exception e) {
             log.error("Failed to send email to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Failed to send email", e);
+            throw new EmailSendException("Failed to send email", e);
         }
     }
     
@@ -88,7 +89,7 @@ public class EmailService {
             sendAVerificationEmail(to, emailVerificationToken, "token");
         } catch (MessagingException e) {
             log.error("Failed to send verification email to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Could not send verification email", e);
+            throw new EmailSendException("Could not send verification email", e);
         }
     }
 
@@ -98,7 +99,7 @@ public class EmailService {
             sendAVerificationEmail(to, verificationCode, "code");
         } catch (MessagingException e) {
             log.error("Failed to send verification code to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Could not send verification code", e);
+            throw new EmailSendException("Could not send verification code", e);
         }
     }
 
@@ -122,7 +123,7 @@ public class EmailService {
             sendAProveRequestEmail(clinicAdminEmail, email, firstName, lastName, role, clinicName);
         } catch (MessagingException e) {
             log.error("Failed to send processing reminder email to {}: {}", email, e.getMessage());
-            throw new RuntimeException("Could not send processing reminder email", e);
+            throw new EmailSendException("Could not send processing reminder email", e);
         }
     }
 
@@ -149,7 +150,7 @@ public class EmailService {
             sendAProveRequestEmail(systemAdminEmail, email, firstName, lastName, "System Admin", clinicName);
         } catch (MessagingException e) {
             log.error("Failed to send system admin approval email to {}: {}", email, e.getMessage());
-            throw new RuntimeException("Could not send system admin approval email", e);
+            throw new EmailSendException("Could not send system admin approval email", e);
         }
     }
 
@@ -172,7 +173,7 @@ public class EmailService {
             log.info("Notification email sent to {} using template {}", to, templateName);
         } catch (MessagingException e) {
             log.error("Failed to send notification email to {}: {}", to, e.getMessage());
-            throw new RuntimeException("Failed to send notification email", e);
+            throw new EmailSendException("Failed to send notification email", e);
         }
     }
 

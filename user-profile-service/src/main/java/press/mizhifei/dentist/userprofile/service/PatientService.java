@@ -41,6 +41,13 @@ public class PatientService {
     }
 
     @Transactional(readOnly = true)
+    public PatientResponse getPatientById(Long id) {
+        Patient patient = patientRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Patient not found with id: " + id));
+        return convertToDto(patient);
+    }
+
+    @Transactional(readOnly = true)
     public List<PatientResponse> listAllPatients() {
         return patientRepository.findAll().stream()
                 .map(this::convertToDto)

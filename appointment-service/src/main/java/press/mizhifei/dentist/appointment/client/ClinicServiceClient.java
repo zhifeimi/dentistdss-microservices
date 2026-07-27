@@ -12,7 +12,10 @@ import press.mizhifei.dentist.appointment.dto.ApiResponse;
  * @github https://github.com/zm377
  *
  */
-@FeignClient(name = "clinic-service", path = "/clinic")
+@FeignClient(
+        name = "clinic-service",
+        path = "/clinic",
+        configuration = ClinicServiceFeignConfiguration.class)
 public interface ClinicServiceClient {
     
     @GetMapping("/service/{serviceId}")

@@ -9,6 +9,7 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import press.mizhifei.dentist.gateway.service.TrustedProxyClientAddressResolver;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
@@ -28,6 +29,12 @@ public class LoggingFilter implements GlobalFilter, Ordered {
     private static final Logger logger = LoggerFactory.getLogger(LoggingFilter.class);
     private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    private final TrustedProxyClientAddressResolver clientAddressResolver;
+
+    public LoggingFilter(TrustedProxyClientAddressResolver clientAddressResolver) {
+        this.clientAddressResolver = clientAddressResolver;
+    }
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
@@ -36,7 +43,7 @@ public class LoggingFilter implements GlobalFilter, Ordered {
         String timestamp = LocalDateTime.now().format(formatter);
         String method = request.getMethod().toString();
         String path = request.getPath().toString();
-        String remoteAddress = getClientIpAddress(request);
+        String remoteAddress = clientAddressResolver.resolve(request);
         String userAgent = request.getHeaders().getFirst("User-Agent");
 
         // Log incoming request
@@ -56,26 +63,5 @@ public class LoggingFilter implements GlobalFilter, Ordered {
     @Override
     public int getOrder() {
         return Ordered.LOWEST_PRECEDENCE; // Execute last to capture final response
-    }
-
-    /**
-     * Extract client IP address from request headers
-     */
-    private String getClientIpAddress(ServerHttpRequest request) {
-        String xForwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-
-        String xRealIp = request.getHeaders().getFirst("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
-
-        java.net.InetSocketAddress remoteAddress = request.getRemoteAddress();
-        if (remoteAddress != null && remoteAddress.getAddress() != null) {
-            return remoteAddress.getAddress().getHostAddress();
-        }
-        return "unknown";
     }
 }

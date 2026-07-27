@@ -1,7 +1,8 @@
 package press.mizhifei.dentist.appointment.dto;
 
-import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,7 +25,6 @@ import java.time.LocalTime;
 @NoArgsConstructor
 public class AppointmentRequest {
     
-    @NotNull(message = "Patient ID is required")
     private Long patientId;
     
     @NotNull(message = "Dentist ID is required")
@@ -33,13 +33,13 @@ public class AppointmentRequest {
     @NotNull(message = "Clinic ID is required")
     private Long clinicId;
 
-    @NotNull(message = "Created by is required")
+    @Deprecated
     private Long createdBy;
     
     private Integer serviceId;
     
     @NotNull(message = "Appointment date is required")
-    @Future(message = "Appointment date must be in the future")
+    @FutureOrPresent(message = "Appointment date must not be in the past")
     private LocalDate appointmentDate;
     
     @NotNull(message = "Start time is required")
@@ -54,7 +54,10 @@ public class AppointmentRequest {
     @Size(max = 1000, message = "Symptoms description must not exceed 1000 characters")
     private String symptoms;
     
-    private String urgencyLevel; // ROUTINE, MODERATE, URGENT, EMERGENCY
+    @Pattern(
+            regexp = "(?i)ROUTINE|MODERATE|URGENT|EMERGENCY",
+            message = "Urgency level must be ROUTINE, MODERATE, URGENT, or EMERGENCY")
+    private String urgencyLevel;
     
     @Size(max = 1000, message = "Notes must not exceed 1000 characters")
     private String notes;

@@ -9,12 +9,18 @@ spring:
 
   datasource:
     url: jdbc:postgresql://postgres:5432/dentistdss
-    username: dentistdss
-    password: ${POSTGRES_PASSWORD}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  # DATA-02 follow-up: schema migrations run in the standalone migrator
+  # Job (Helm pre-upgrade hook / compose one-shot) as the migration owner;
+  # this service boots with its least-privilege role and never sees the
+  # owner credential. Hibernate ddl-auto=validate remains the drift check.
+  flyway:
+    enabled: false
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -25,6 +31,10 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: ${AUTH_SERVICE_URL:http://auth-service:8081}/auth/oauth2/jwks
+
+jwt:
+  issuer: ${JWT_ISSUER:http://api-gateway:8080}
+  audience: ${JWT_AUDIENCE:dentistdss-api}
 
 eureka:
   client:
@@ -41,7 +51,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   jmx:
     exposure:
       exclude: "*"  # Disable JMX to avoid RMI issues

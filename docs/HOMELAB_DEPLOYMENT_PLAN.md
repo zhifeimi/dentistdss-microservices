@@ -49,7 +49,7 @@ pull credentials. Docker Compose is retained only as a single-host fallback.
 
 ### Pull requests
 
-- Backend: compile and test the full Maven reactor on Java 21.
+- Backend: compile and test the full Maven reactor on Java 25.
 - Frontend: deterministic `npm ci`, unit/component tests, TypeScript build.
 - Vercel's Git integration creates preview deployments without duplicating the
   deployment in GitHub Actions.

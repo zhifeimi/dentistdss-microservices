@@ -3,73 +3,84 @@ package press.mizhifei.dentist.clinicalrecords.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import press.mizhifei.dentist.clinicalrecords.dto.ApiResponse;
 
-import java.util.HashMap;
-import java.util.Map;
-
-/**
- *
- * @author zhifeimi
- * @email zm377@uowmail.edu.au
- * @github https://github.com/zm377
- *
- */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-    
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ApiResponse<Object>> handleIllegalArgumentException(IllegalArgumentException ex) {
-        log.warn("Illegal argument: {}", ex.getMessage());
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error(ex.getMessage()));
+
+    @ExceptionHandler(ClinicalResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleClinicalResourceNotFound(
+            ClinicalResourceNotFoundException exception) {
+        log.warn("Clinical resource was not found or was outside the caller scope");
+        return error(HttpStatus.NOT_FOUND, "Clinical resource not found");
     }
-    
+
+    @ExceptionHandler(InvalidClinicalRequestException.class)
+    public ResponseEntity<ApiResponse<Object>> handleInvalidClinicalRequest(
+            InvalidClinicalRequestException exception) {
+        log.warn("Clinical request failed validation");
+        return error(HttpStatus.BAD_REQUEST, "Invalid clinical request");
+    }
+
+    @ExceptionHandler(ClinicalStateConflictException.class)
+    public ResponseEntity<ApiResponse<Object>> handleClinicalStateConflict(
+            ClinicalStateConflictException exception) {
+        log.warn("Clinical request conflicted with resource state");
+        return error(HttpStatus.CONFLICT, "Clinical resource state conflict");
+    }
+
+    @ExceptionHandler(ClinicalDependencyUnavailableException.class)
+    public ResponseEntity<ApiResponse<Object>> handleClinicalDependencyUnavailable(
+            ClinicalDependencyUnavailableException exception) {
+        log.warn("Clinical storage dependency is unavailable");
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "Clinical service is temporarily unavailable");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleAccessDenied(AccessDeniedException exception) {
+        log.warn("Clinical access was denied");
+        return error(HttpStatus.FORBIDDEN, "Clinical access denied");
+    }
+
+    @ExceptionHandler({
+            MethodArgumentNotValidException.class,
+            MethodArgumentTypeMismatchException.class,
+            HttpMessageNotReadableException.class,
+            MaxUploadSizeExceededException.class,
+            IllegalArgumentException.class
+    })
+    public ResponseEntity<ApiResponse<Object>> handleInvalidRequest(Exception exception) {
+        log.warn("Clinical request could not be parsed or validated");
+        return error(HttpStatus.BAD_REQUEST, "Invalid clinical request");
+    }
+
     @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<ApiResponse<Object>> handleIllegalStateException(IllegalStateException ex) {
-        log.warn("Illegal state: {}", ex.getMessage());
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error(ex.getMessage()));
+    public ResponseEntity<ApiResponse<Object>> handleIllegalStateException(IllegalStateException exception) {
+        log.warn("Clinical request conflicted with an unexpected resource state");
+        return error(HttpStatus.CONFLICT, "Clinical resource state conflict");
     }
-    
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
-        
-        log.warn("Validation errors: {}", errors);
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error("Validation failed: " + errors.toString()));
-    }
-    
-    @ExceptionHandler(MaxUploadSizeExceededException.class)
-    public ResponseEntity<ApiResponse<Object>> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex) {
-        log.warn("File upload size exceeded: {}", ex.getMessage());
-        return ResponseEntity.badRequest()
-                .body(ApiResponse.error("File size exceeds maximum allowed limit"));
-    }
-    
+
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<ApiResponse<Object>> handleRuntimeException(RuntimeException ex) {
-        log.error("Runtime exception occurred", ex);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("An internal error occurred"));
+    public ResponseEntity<ApiResponse<Object>> handleRuntimeException(RuntimeException exception) {
+        log.error("Unhandled clinical records runtime exception");
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "An internal error occurred");
     }
-    
+
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Object>> handleGenericException(Exception ex) {
-        log.error("Unexpected exception occurred", ex);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error("An unexpected error occurred"));
+    public ResponseEntity<ApiResponse<Object>> handleGenericException(Exception exception) {
+        log.error("Unhandled clinical records exception");
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "An internal error occurred");
+    }
+
+    private ResponseEntity<ApiResponse<Object>> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(ApiResponse.error(message));
     }
 }

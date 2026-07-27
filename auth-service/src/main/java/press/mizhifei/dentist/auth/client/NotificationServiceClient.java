@@ -17,7 +17,8 @@ import press.mizhifei.dentist.auth.dto.VerificationEmailRequest;
  * @github https://github.com/zm377
  *
  */
-@FeignClient(name = "notification-service", path = "/notification/email")
+@FeignClient(name = "notification-service", path = "/notification/email",
+        configuration = NotificationEmailFeignConfiguration.class)
 public interface NotificationServiceClient {
 
     @PostMapping("/send")

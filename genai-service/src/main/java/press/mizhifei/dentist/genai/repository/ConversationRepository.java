@@ -12,5 +12,13 @@ import reactor.core.publisher.Flux;
  *
  */
 public interface ConversationRepository extends ReactiveMongoRepository<Conversation, String> {
-    Flux<Conversation> findBySessionId(String sessionId);
+    Flux<Conversation> findBySessionIdAndUserIdAndClinicIdAndAgent(
+            String sessionId,
+            String userId,
+            String clinicId,
+            String agent);
+
+    Flux<Conversation> findBySessionIdAndUserIdIsNullAndClinicIdIsNullAndAgent(
+            String sessionId,
+            String agent);
 } 
