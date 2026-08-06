@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: redis
-          image: docker.io/library/redis:7.4-alpine
+          image: docker.io/library/redis:8.10-alpine
           imagePullPolicy: IfNotPresent
           # The password is expanded inside the container so it never appears
           # in the pod spec or on the host process list.
