@@ -1,5 +1,5 @@
 global:
-  imageTag: bootstrap
+  imageTag: sha-1f6ea0ea3b2992b0244e011a2c6ccc5f640ff4c5
 
 gateway:
   loadBalancerIP: 10.80.30.204
