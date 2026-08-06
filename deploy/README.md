@@ -114,12 +114,31 @@ Schema changes are new `V2__<description>.sql` migrations added to
 `V1__baseline.sql` after it ships** — checksums of applied migrations must
 not change; rollback of a bad migration is a new forward migration.
 
+## Database engine upgrades
+
+Compose pins PostgreSQL 18, MongoDB 8.0 (LTS), and Redis 8.10. On an
+EXISTING compose volume, PostgreSQL 17 → 18 refuses to boot (PG_VERSION);
+upgrade with dump/restore:
+
+```bash
+docker compose exec postgres pg_dump -U dentistdss dentistdss > pg17-dump.sql
+docker compose down
+docker volume rm dentistdss_postgres_data        # only after the dump is verified
+docker compose up -d postgres mongo redis         # PG18 initializes fresh
+docker compose exec -T postgres psql -U dentistdss dentistdss < pg17-dump.sql
+# then the provision script (roles) + migrator one-shot as in First deploy
+```
+
+MongoDB 7.0 → 8.0 keeps the data directory; run
+`setFeatureCompatibilityVersion "7.0"` before the swap and `"8.0"` after
+(see chart/README.md for the exact commands). Redis is a drop-in upgrade.
+
 The schema contract is gated by opt-in `*SchemaContractTest` suites in each
 JDBC service: they migrate a real PostgreSQL database and validate the
 service's entity mappings against it. They run in CI (postgres service
 container) and locally when `TEST_DATABASE_URL`, `TEST_DATABASE_USERNAME`,
 and `TEST_DATABASE_PASSWORD` are set, e.g. against
-`docker run -e POSTGRES_DB=dentistdss -e POSTGRES_USER=dentistdss -e POSTGRES_PASSWORD=dentistdss -p 5432:5432 postgres:17-alpine`.
+`docker run -e POSTGRES_DB=dentistdss -e POSTGRES_USER=dentistdss -e POSTGRES_PASSWORD=dentistdss -p 5432:5432 postgres:18-alpine`.
 Still exercise a restore plus one forward-migration cycle on a scratch copy
 before storing real patient data in a rebuilt database.
 

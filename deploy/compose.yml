@@ -24,7 +24,7 @@ x-spring-service: &spring-service
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: dentistdss
@@ -45,7 +45,7 @@ services:
     stop_grace_period: 60s
 
   mongo:
-    image: mongo:7.0
+    image: mongo:8.0
     restart: unless-stopped
     environment:
       MONGO_INITDB_DATABASE: dentistdss
@@ -73,7 +73,7 @@ services:
     stop_grace_period: 60s
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:8.10-alpine
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}

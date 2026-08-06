@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgres
-          image: docker.io/library/postgres:17.5-alpine
+          image: docker.io/library/postgres:18.4-alpine
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_DB
@@ -139,7 +139,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mongo
-          image: docker.io/library/mongo:7.0.21
+          image: docker.io/library/mongo:8.0.28
           imagePullPolicy: IfNotPresent
           args: ["mongod", "--auth", "--bind_ip_all"]
           env:
