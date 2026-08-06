@@ -180,6 +180,32 @@ done, by design):
 #    pods never hold the owner password.
 ```
 
+## Database engine upgrades
+
+PostgreSQL 18.4, MongoDB 8.0.28 (LTS), and Redis 8.10 are pinned in the
+chart. **Do the engine upgrade BEFORE the DATA-02 rollout** so roles and
+grants are provisioned once, on the final engines.
+
+- **PostgreSQL 17 → 18**: a major upgrade CANNOT boot against an existing
+  PG17 data directory (PG_VERSION mismatch). The supported homelab path is
+  dump/restore:
+  1. `kubectl exec statefulset/postgres -- pg_dump -U dentistdss dentistdss > pg17-dump.sql`
+     (copy it off-node).
+  2. Upgrade the chart with the new image, replacing the postgres PVC with
+     a fresh volume (delete the PVC after confirming the dump is valid —
+     the StatefulSet recreates it).
+  3. `kubectl exec -i statefulset/postgres -- psql -U dentistdss dentistdss < pg17-dump.sql`.
+  4. The migrator hook Job then reconciles V1–V3 (no-op on a restored
+     schema) — proceed to the DATA-02 rollout.
+  Verify the dump before deleting anything: `pg_restore --list`-equivalent
+  sanity for plain SQL is a row count on `users`/`appointments`.
+- **MongoDB 7.0 → 8.0**: set the featureCompatibilityVersion before and
+  after the binary swap:
+  1. `db.adminCommand({ setFeatureCompatibilityVersion: "7.0", confirm: true })`
+  2. Upgrade the StatefulSet image to 8.0.28 and let it restart.
+  3. `db.adminCommand({ setFeatureCompatibilityVersion: "8.0", confirm: true })`
+- **Redis 7.4 → 8.10**: drop-in; the AOF volume carries over.
+
 Seed each runtime record interactively without printing credentials:
 
 ```bash
