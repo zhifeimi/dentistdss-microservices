@@ -43,7 +43,7 @@
         <spring-cloud.version>2025.1.2</spring-cloud.version>
         <spring-ai.version>2.0.0</spring-ai.version>
         <spring-boot-admin.version>4.1.2</spring-boot-admin.version>
-        <springdoc-openapi.version>3.0.3</springdoc-openapi.version>
+        <springdoc-openapi.version>3.1.0</springdoc-openapi.version>
         <google-api-client.version>2.9.0</google-api-client.version>
         <google-http-client.version>2.2.0</google-http-client.version>
         <hypersistence-utils.version>3.15.4</hypersistence-utils.version>
