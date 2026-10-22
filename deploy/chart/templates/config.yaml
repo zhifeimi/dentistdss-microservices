@@ -26,9 +26,19 @@ spec:
         namespace: external-secrets
         key: ca.crt
       auth:
+        {{- with .Values.externalSecrets.kubernetesAuth }}
+        {{- if .mountPath }}
+        # The ESO controller ServiceAccount logs in; Vault scopes the role.
+        kubernetes:
+          mountPath: {{ .mountPath | quote }}
+          role: {{ required "externalSecrets.kubernetesAuth.role is required" .role | quote }}
+        {{- end }}
+        {{- end }}
+        {{- if not .Values.externalSecrets.kubernetesAuth.mountPath }}
         tokenSecretRef:
           name: {{ .Values.externalSecrets.tokenSecretName }}
           key: token
+        {{- end }}
 {{- $storeName := .Values.externalSecrets.storeName }}
 {{- $runtimePath := .Values.externalSecrets.runtimePath }}
 {{- range $secretName, $keys := .Values.externalSecrets.records }}
