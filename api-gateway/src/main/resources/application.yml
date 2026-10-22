@@ -19,7 +19,10 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
       password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL:false}
       timeout: 2s
   cloud:
     gateway:
@@ -346,5 +349,14 @@ management:
     gateway:
       access: READ_ONLY
 
-
-
+---
+# Test profile (--spring.profiles.active=test): dentistdss_test Valkey user on
+# logical database 1 so test keys never collide with dev keys.
+spring:
+  config:
+    activate:
+      on-profile: test
+  data:
+    redis:
+      username: ${REDIS_USERNAME:dentistdss_test}
+      database: ${REDIS_DATABASE:1}

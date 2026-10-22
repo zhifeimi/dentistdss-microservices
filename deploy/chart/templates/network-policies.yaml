@@ -200,6 +200,9 @@ spec:
                   - appointment-service
                   - clinical-records-service
                   - genai-service
+                  - system-service
+                  - audit-service
+                  - notification-service
       ports:
         - protocol: TCP
           port: 6379

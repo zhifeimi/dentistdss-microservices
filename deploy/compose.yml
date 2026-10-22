@@ -297,6 +297,8 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrator:
         condition: service_completed_successfully
     environment:
@@ -305,6 +307,9 @@ services:
       DB_USERNAME: svc_system
       DB_PASSWORD: ${SYSTEM_SERVICE_DB_PASSWORD:?SYSTEM_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8086/actuator/health >/dev/null"]
       interval: 15s
@@ -319,6 +324,8 @@ services:
       postgres:
         condition: service_healthy
       discovery-server:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       auth-service:
         condition: service_healthy
@@ -337,6 +344,9 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
       MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
       BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       SERVICE_AUTH_PRIVATE_KEY: ${NOTIFICATION_SERVICE_AUTH_PRIVATE_KEY:-}
       SERVICE_AUTH_KEY_ID: ${NOTIFICATION_SERVICE_AUTH_KEY_ID:-notification-service-1}
       SERVICE_AUTH_PUBLIC_KEY_AUTH: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:-}
@@ -427,10 +437,15 @@ services:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *spring-environment
       SPRING_DATA_MONGODB_URI: mongodb://svc_audit:${AUDIT_SERVICE_MONGO_PASSWORD:?AUDIT_SERVICE_MONGO_PASSWORD is required}@mongo:27017/dentistdss?authSource=admin
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       SERVICE_AUTH_PUBLIC_KEY_AUTH: ${SERVICE_AUTH_PUBLIC_KEY_AUTH:-}
       SERVICE_AUTH_KEY_ID_AUTH: ${SERVICE_AUTH_KEY_ID_AUTH:-auth-service-1}
     healthcheck:

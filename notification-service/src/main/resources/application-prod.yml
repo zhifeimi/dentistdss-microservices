@@ -4,6 +4,14 @@ server:
 spring:
   application:
     name: notification-service
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      # Required: security-common checks every access token against Redis,
+      # so fail closed instead of connecting unauthenticated.
+      password: ${REDIS_PASSWORD}
+      timeout: 2s
   config:
     import: optional:configserver:http://${SPRING_CONFIG_USER}:${SPRING_CONFIG_PASS}@config-server:8888
   security:

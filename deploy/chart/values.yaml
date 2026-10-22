@@ -3,6 +3,15 @@ global:
   imageTag: bootstrap
   imagePullPolicy: IfNotPresent
   publicBaseUrl: https://dentistdss.vercel.app
+  # <image name> -> sha256 digest; written per release by the workflow.
+  imageDigests: {}
+
+# Upstream database images, mirrored and signed into
+# <imageRegistry>/dentistdss-<name> by the release workflow.
+databaseImageTags:
+  postgres: 18.4-alpine
+  mongo: 8.0.28
+  redis: 8.10-alpine
 
 gateway:
   loadBalancerIP: ""
@@ -160,16 +169,22 @@ services:
     replicas: 1
     secrets:
       - dentistdss-db-system
+      - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   audit-service:
     port: 8087
     replicas: 1
     secrets:
       - dentistdss-mongo-audit
+      - dentistdss-redis
     env:
       AUTH_SERVICE_URL: http://auth-service:8081
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   notification-service:
     port: 8088
     replicas: 1
@@ -177,9 +192,12 @@ services:
     secrets:
       - dentistdss-db-notification
       - dentistdss-mail
+      - dentistdss-redis
     env:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dentistdss
       BASE_URL: https://dentistdss.vercel.app
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
   appointment-service:
     port: 8089
     replicas: 1
