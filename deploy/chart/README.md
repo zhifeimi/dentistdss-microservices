@@ -233,7 +233,8 @@ NetworkPolicies default-deny the namespace and then allow only:
 - PostgreSQL ingress from the seven JDBC services on 5432;
 - MongoDB ingress from `clinical-records-service`, `audit-service`, and
   `genai-service` on 27017;
-- Redis ingress from its seven consumers on 6379;
+- Redis ingress from its ten consumers on 6379 (every service that
+  validates access tokens through `security-common`);
 - gateway-to-GenAI and external LoadBalancer ingress to `api-gateway`;
 - DNS egress to `kube-system` and selected external egress for pods labeled
   `dentistdss.io/external-egress: "true"` (CGNAT and link-local ranges stay
