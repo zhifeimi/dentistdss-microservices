@@ -21,6 +21,11 @@ externalSecrets:
   vaultServer: ""
   storeName: homelab-vault-dentistdss
   tokenSecretName: vault-dentistdss-token
+  # Vault Kubernetes auth instead of the static token above: set mountPath
+  # (the cluster's auth mount) and role. Static tokens expire unrenewed.
+  kubernetesAuth:
+    mountPath: ""
+    role: ""
   runtimePath: apps/dentistdss/dev/runtime
   genaiServiceAuthPath: apps/dentistdss/dev/genai-service-auth
   # One Vault record per issuing service (auth/appointment/clinical-records/
