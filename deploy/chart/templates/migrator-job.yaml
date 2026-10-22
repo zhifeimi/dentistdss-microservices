@@ -42,7 +42,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: db-migrator
-          image: "{{ .Values.global.imageRegistry }}/dentistdss-auth-service:{{ .Values.global.imageTag }}"
+          image: {{ include "dentistdss.image" (list . "auth-service" .Values.global.imageTag) | quote }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           command:
             - java

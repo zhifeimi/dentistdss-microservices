@@ -243,9 +243,13 @@ NetworkPolicies default-deny the namespace and then allow only:
 When a service gains or loses a database dependency, update both its
 `secrets` list and the matching `allow-*-clients` policy.
 
-The release workflow makes the repository-linked GHCR images public before it
-updates either GitOps branch, so no long-lived registry credential is stored in
-the cluster.
+`.github/workflows/release.yml` publishes every service image on each push to
+`main`, mirrors the pinned `databaseImageTags` into `dentistdss-<name>`, and
+cosign-signs all of them keylessly. Production Kyverno admits only those
+signatures, pinned by digest: dispatching the workflow with a `sha-<40 hex>` tag
+verifies each signature and writes the tag plus `global.imageDigests` to the
+`gitops-prod` branch. Packages must be public, so no registry credential is
+stored in the cluster.
 
 ## Validation
 

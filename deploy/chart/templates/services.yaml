@@ -75,7 +75,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: {{ $name }}
-          image: "{{ $.Values.global.imageRegistry }}/dentistdss-{{ $name }}:{{ $.Values.global.imageTag }}"
+          image: {{ include "dentistdss.image" (list $ $name $.Values.global.imageTag) | quote }}
           imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
           {{- if $service.secrets }}
           envFrom:

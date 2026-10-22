@@ -3,6 +3,15 @@ global:
   imageTag: bootstrap
   imagePullPolicy: IfNotPresent
   publicBaseUrl: https://dentistdss.vercel.app
+  # <image name> -> sha256 digest; written per release by the workflow.
+  imageDigests: {}
+
+# Upstream database images, mirrored and signed into
+# <imageRegistry>/dentistdss-<name> by the release workflow.
+databaseImageTags:
+  postgres: 18.4-alpine
+  mongo: 8.0.28
+  redis: 8.10-alpine
 
 gateway:
   loadBalancerIP: ""
