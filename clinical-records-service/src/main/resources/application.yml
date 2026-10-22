@@ -19,12 +19,15 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
       password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL:false}
       timeout: 2s
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/dentistdss
-    username: dentistdss
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:dentistdss}?sslmode=${DB_SSLMODE:prefer}
+    username: ${DB_USERNAME:dentistdss}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
@@ -152,3 +155,18 @@ clinical-records:
     image-retention-days: 2555  # 7 years
     note-auto-save-interval: 30  # seconds
     max-note-versions: 10
+
+---
+# Test database on the same dev server: run with --spring.profiles.active=test
+# and POSTGRES_PASSWORD set to the dentistdss_test password.
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/dentistdss_test?sslmode=${DB_SSLMODE:prefer}
+    username: ${DB_USERNAME:dentistdss_test}
+  data:
+    redis:
+      username: ${REDIS_USERNAME:dentistdss_test}
+      database: ${REDIS_DATABASE:1}
