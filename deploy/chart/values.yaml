@@ -21,6 +21,9 @@ externalSecrets:
   vaultServer: ""
   storeName: homelab-vault-dentistdss
   tokenSecretName: vault-dentistdss-token
+  # PEM CA for vaultServer, rendered inline into the SecretStore. Empty: read
+  # ConfigMap vault-ca (key ca.crt) from the release namespace instead.
+  vaultCaBundle: ""
   # Vault Kubernetes auth instead of the static token above: set mountPath
   # (the cluster's auth mount) and role. Static tokens expire unrenewed.
   kubernetesAuth:
