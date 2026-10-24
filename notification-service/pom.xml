@@ -66,6 +66,12 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
+        <!-- WebFlux does not bring Boot http-converter, which OpenFeign's
+             FeignClientsConfiguration needs (else NoClassDefFoundError at boot). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-http-converter</artifactId>
+        </dependency>
         
         <!-- Actuator -->
         <dependency>
