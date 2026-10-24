@@ -138,6 +138,29 @@ class ServiceRoleContractTest {
         assertEquals("42501", e.getSQLState(), "svc_auth must not use appointment_id_seq");
     }
 
+    /**
+     * Hibernate's ddl-auto=validate looks sequences up in
+     * information_schema.sequences, which lists only sequences the connecting
+     * role holds a privilege on; a missing grant fails service boot with
+     * "missing sequence". role -> sequences its entities name.
+     */
+    @Test
+    void everyRoleSeesItsEntitySequences() {
+        Map<String, String[]> sequences = new LinkedHashMap<>();
+        sequences.put("svc_auth", new String[] {"user_id_seq" });
+        sequences.put("svc_user_profile", new String[] {"user_id_seq" });
+        sequences.put("svc_appointment", new String[] {"appointment_id_seq" });
+        sequences.put("svc_clinical_records", new String[] {"patient_record_id_seq" });
+        sequences.put("svc_notification", new String[] {"notification_id_seq" });
+        sequences.forEach((role, names) -> {
+            for (String name : names) {
+                assertDoesNotThrow(() -> assertEquals(1, count(role,
+                        "select count(*) from information_schema.sequences where sequence_name = '" + name + "'"),
+                        role + " must see " + name), role + " sequence lookup");
+            }
+        });
+    }
+
     @Test
     void serviceRolesCannotExecuteDdl() {
         for (String role : OWN_TABLE.keySet()) {
@@ -145,6 +168,16 @@ class ServiceRoleContractTest {
                     () -> query(role, "create table contract_ddl_probe (id int)"),
                     role + " must not execute DDL");
             assertEquals("42501", e.getSQLState(), role + " DDL probe");
+        }
+    }
+
+    private static long count(String role, String sql) throws SQLException {
+        try (Connection c = DriverManager.getConnection(
+                System.getenv("TEST_DATABASE_URL"), role, ROLE_TEST_PASSWORD);
+                Statement s = c.createStatement();
+                java.sql.ResultSet rs = s.executeQuery(sql)) {
+            rs.next();
+            return rs.getLong(1);
         }
     }
 

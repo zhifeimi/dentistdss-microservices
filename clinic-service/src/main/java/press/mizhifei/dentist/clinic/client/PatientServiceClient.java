@@ -11,6 +11,7 @@ import press.mizhifei.dentist.clinic.dto.PatientResponse;
  */
 @FeignClient(
         name = "user-profile-service",
+        contextId = "userProfilePatientClient",
         path = "/patient",
         configuration = UserProfileServiceFeignConfiguration.class)
 public interface PatientServiceClient {
