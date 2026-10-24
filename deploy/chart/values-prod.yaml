@@ -1,10 +1,25 @@
 global:
-  imageTag: bootstrap
-
+  imageTag: sha-ebbda92439fba7a6e6b4911463851b52c195ba37
+  imageDigests:
+    config-server: sha256:cd30921c106d86dee6f647f2b7ed8439543303a143652697c6638a3b9dd6f11a
+    discovery-server: sha256:19aeaf69b47f5f07747e5a3ef07c1ca675a3f45b8d21ea2f8175ce4426d83c97
+    api-gateway: sha256:49e5d39822f08691ae22ccb6faece79d84eb384a4bb45f7eb8e7cf4809a52add
+    auth-service: sha256:a42da295e324d90c16a80d33a8a6c838328637e46dd619218b5a9d247bbda5ec
+    clinic-service: sha256:0c2ba99418e85bf741287d6a9510e1a455e9f623209e8a89b935e49681a94424
+    appointment-service: sha256:193a0d0667ee5579b3b574658ca02719f3a1f6d6cbfa8bbb0b10fe72764407b9
+    clinical-records-service: sha256:cb4eaedeb2cd852b4a770f5565a4803f62c20923469734971e4bfeba7a6f1edb
+    admin-server: sha256:696b05b41d1a07905b279dad4230ba6996a6ffce866faad777e16ae1369b91aa
+    notification-service: sha256:ce1cbf0c6bf260de668a41c52c5249657cf4e676a691bf7c92629bb66994b5c0
+    genai-service: sha256:9778f30fb37742470bc0332025bf81e1249b6554af9ef78239d68840f0897af8
+    user-profile-service: sha256:1d9dcdf3e3964ce28c54f9db6ddf986e58740c54cbe52e58abb2e07b429221ee
+    system-service: sha256:517b99aed5414380c82b03594e6329641e9c4ab9902138cbfc2f5ced13f64120
+    audit-service: sha256:68f77cc53df5c42349ea2fab132a5bfa5eb5b2960db6afdbe2fa6e51894ceb06
+    postgres: sha256:9d14a518c914c27db83bc6ae84c3e9e1861dbb067ab09914eda98d9235137aa0
+    mongo: sha256:7e29d0c141886138e37d8ef183c2a14f5890c16c5b4b29a0b998139d714838f9
+    redis: sha256:6d6874d8e9a34b20181a19fce96943469ccb93f10083b7a13dea74fd3777ef35
 gateway:
   loadBalancerIP: 10.80.20.204
   addressPool: pve-prod-services
-
 externalSecrets:
   vaultServer: https://10.80.0.13:8200
   runtimePath: apps/dentistdss/prod/runtime
@@ -14,7 +29,6 @@ externalSecrets:
   kubernetesAuth:
     mountPath: kubernetes-prod
     role: external-secrets-dentistdss-prod
-
 # Match the dev heap/exit policy so prod containers honor their memory limits
 # and fail fast on OOM instead of limping in a degraded state.
 commonEnv:
