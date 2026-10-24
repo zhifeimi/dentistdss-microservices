@@ -14,6 +14,7 @@ import java.util.List;
  */
 @FeignClient(
         name = "user-profile-service",
+        contextId = "userProfileUserClient",
         path = "/user",
         configuration = UserProfileServiceFeignConfiguration.class)
 public interface UserProfileServiceClient {
