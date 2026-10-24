@@ -47,7 +47,6 @@
         <springdoc-openapi.version>3.0.3</springdoc-openapi.version>
         <google-api-client.version>2.9.0</google-api-client.version>
         <google-http-client.version>2.2.0</google-http-client.version>
-        <hypersistence-utils.version>3.15.4</hypersistence-utils.version>
         <!-- Trivy image gate (SUPPLY-01): the patch-level overrides that ran
              ahead of spring-boot-starter-parent 4.0.8 (tomcat, jackson 2/3,
              httpcore5, freemarker) were removed with the move to Boot 4.1.2:
@@ -205,11 +204,6 @@
                 <groupId>com.google.http-client</groupId>
                 <artifactId>google-http-client-jackson2</artifactId>
                 <version>${google-http-client.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.hypersistence</groupId>
-                <artifactId>hypersistence-utils-hibernate-71</artifactId>
-                <version>${hypersistence-utils.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

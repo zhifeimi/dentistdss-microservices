@@ -1,13 +1,13 @@
 package press.mizhifei.dentist.notification.model;
 
 import tools.jackson.databind.JsonNode;
-import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.Type;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -38,6 +38,7 @@ public class Notification {
     private Integer templateId;
     
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(columnDefinition = "notification_type", nullable = false)
     private NotificationType type;
     
@@ -47,6 +48,7 @@ public class Notification {
     private String body;
     
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(columnDefinition = "notification_status")
     @Builder.Default
     private NotificationStatus status = NotificationStatus.PENDING;
@@ -60,7 +62,7 @@ public class Notification {
     @Column(name = "read_at")
     private LocalDateTime readAt;
     
-    @Type(JsonType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private JsonNode metadata;
     
