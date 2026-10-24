@@ -244,6 +244,17 @@ assert_deployment_containers() {
         | ("Deployment/" + $doc.metadata.name) + " container " + .name
             + ": readinessProbe is required"
     '
+    # Pod hostnames are not resolvable through cluster DNS, so every Eureka
+    # client must register its pod IP or the gateway cannot reach it.
+    report_violations "${file}" "${docs}" '
+        .[] | select(.kind == "Deployment")
+        | . as $doc
+        | (.spec.template.spec.containers // [])[]
+        | select([(.env // [])[] | select(.name == "EUREKA_URI")] | length > 0)
+        | select([(.env // [])[] | select(.name == "EUREKA_INSTANCE_PREFERIPADDRESS" and .value == "true")] | length == 0)
+        | ("Deployment/" + $doc.metadata.name) + " container " + .name
+            + ": EUREKA_INSTANCE_PREFERIPADDRESS must be \"true\""
+    '
 }
 
 assert_images() {

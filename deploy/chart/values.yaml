@@ -91,6 +91,8 @@ commonEnv:
   SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
   SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
   EUREKA_URI: http://discovery-server:8761/eureka
+  # Register pod IPs: pod hostnames do not resolve through cluster DNS.
+  EUREKA_INSTANCE_PREFERIPADDRESS: "true"
 
 deploymentStrategy:
   type: RollingUpdate
