@@ -20,11 +20,16 @@ spec:
       server: {{ required "externalSecrets.vaultServer is required" .Values.externalSecrets.vaultServer | quote }}
       path: kv
       version: v2
+      {{- with .Values.externalSecrets.vaultCaBundle }}
+      caBundle: {{ . | b64enc | quote }}
+      {{- else }}
+      # A namespaced SecretStore can only read a vault-ca ConfigMap in its
+      # own namespace.
       caProvider:
         type: ConfigMap
         name: vault-ca
-        namespace: external-secrets
         key: ca.crt
+      {{- end }}
       auth:
         {{- with .Values.externalSecrets.kubernetesAuth }}
         {{- if .mountPath }}
