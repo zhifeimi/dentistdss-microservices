@@ -13,6 +13,8 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.auth.model.AuthAuditOutbox;
 import press.mizhifei.dentist.auth.model.Role;
 import press.mizhifei.dentist.auth.model.UserApprovalRequest;
@@ -24,11 +26,12 @@ import tools.jackson.databind.node.ObjectNode;
  * the mocked unit tests cannot see: the approval queries bind status against
  * a varchar column (V1 has no approval_status type), and the audit outbox
  * context round-trips through jsonb with the Jackson 3 format mapper from
- * application.yml.
+ * application.yml, and the security outbox writes work without a caller
+ * transaction.
  *
  * <p>
  * Skipped unless {@code TEST_DATABASE_URL} is set (local Docker or the CI
- * postgres service container). Each test rolls back.
+ * postgres service container). Each test rolls back unless it opts out.
  */
 @DataJpaTest(properties = {
         "spring.datasource.url=${TEST_DATABASE_URL}",
@@ -51,6 +54,9 @@ class JpaMappingDbTest {
 
     @Autowired
     private AuthAuditOutboxRepository outbox;
+
+    @Autowired
+    private AuthSecurityOutboxRepository securityOutbox;
 
     @Autowired
     private EntityManager entityManager;
@@ -86,5 +92,16 @@ class JpaMappingDbTest {
         assertThat(ip).isEqualTo("203.0.113.7");
         assertThat(outbox.findById(row.getId()))
                 .map(AuthAuditOutbox::getContext).contains(context);
+    }
+
+    /** The scheduled replay and reconcile jobs call these with no transaction open. */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void securityOutboxWritesRunWithoutACallerTransaction() {
+        LocalDateTime now = LocalDateTime.now();
+        securityOutbox.upsertPending(4243L, "db-test-family", 60_000L, now.minusHours(2), now.minusHours(1));
+
+        assertThat(securityOutbox.deleteExpired(now)).isGreaterThanOrEqualTo(1);
+        assertThat(securityOutbox.deleteByUserIdAndFamilyId(4243L, "db-test-family")).isZero();
     }
 }
