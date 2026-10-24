@@ -51,10 +51,6 @@
             <artifactId>db-migrations</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <dependency>
-            <groupId>io.hypersistence</groupId>
-            <artifactId>hypersistence-utils-hibernate-71</artifactId>
-        </dependency>
 
         <!-- Spring Cloud -->
         <dependency>

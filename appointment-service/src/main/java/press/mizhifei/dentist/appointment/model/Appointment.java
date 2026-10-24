@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -52,6 +54,7 @@ public class Appointment {
     private LocalTime endTime;
     
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(columnDefinition = "appointment_status")
     @Builder.Default
     private AppointmentStatus status = AppointmentStatus.REQUESTED;
@@ -63,6 +66,7 @@ public class Appointment {
     private String symptoms;
     
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(columnDefinition = "urgency_level")
     @Builder.Default
     private UrgencyLevel urgency = UrgencyLevel.ROUTINE;

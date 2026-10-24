@@ -40,6 +40,10 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        # jsonb columns map tools.jackson JsonNode; Hibernate would otherwise
+        # pick the Jackson 2 mapper (eureka-client keeps it on the classpath).
+        type:
+          json_format_mapper: org.hibernate.type.format.jackson.Jackson3JsonFormatMapper
     show-sql: true
 
   mail:
