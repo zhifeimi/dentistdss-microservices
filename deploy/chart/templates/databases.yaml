@@ -34,6 +34,10 @@ spec:
         app.kubernetes.io/part-of: dentistdss
     spec:
       automountServiceAccountToken: false
+      {{- with $.Values.databaseAffinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 70
@@ -129,6 +133,10 @@ spec:
         app.kubernetes.io/part-of: dentistdss
     spec:
       automountServiceAccountToken: false
+      {{- with $.Values.databaseAffinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 999

@@ -74,6 +74,11 @@ externalSecrets:
       - MAIL_USERNAME
       - MAIL_PASSWORD
 
+# Pod affinity for the postgres/mongo/redis StatefulSets, e.g. to keep the
+# databases off a node whose disk is shared with a slow etcd member. Their
+# local-path volumes are node-bound, so changing this moves (recreates) data.
+databaseAffinity: {}
+
 persistence:
   storageClass: local-path
   postgresSize: 20Gi
