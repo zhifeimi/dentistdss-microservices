@@ -57,14 +57,13 @@ provision_pg_role() {
     return 0
   fi
   # psql substitutes :'role' / :'pw' as quoted literals and :"role" as a
-  # quoted identifier before sending, so neither value reaches argv.
-  psql -v ON_ERROR_STOP=1 --no-psqlrc --quiet -v role="$role" -v pw="$pw" <<'SQL'
-do $$
-begin
-    if not exists (select from pg_roles where rolname = :'role') then
-        execute format('create role %I login', :'role');
-    end if;
-end $$;
+  # quoted identifier, but not inside $$-quoted bodies, hence \gexec. The
+  # password is read from the environment (\getenv, psql 15+), never argv.
+  export "$pw_var"
+  psql -v ON_ERROR_STOP=1 --no-psqlrc --quiet -v role="$role" -v pw_var="$pw_var" <<'SQL'
+\getenv pw :pw_var
+select format('create role %I login', :'role')
+where not exists (select from pg_roles where rolname = :'role') \gexec
 alter role :"role" with login password :'pw';
 SQL
   log "postgres: role ${role} present, password set"
