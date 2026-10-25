@@ -4,6 +4,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,7 +21,9 @@ import java.math.BigDecimal;
  */
 @Data
 @Builder
-@AllArgsConstructor
+// Private: Jackson 3 would bind JSON through a visible all-args constructor
+// and drop the @Builder.Default values for omitted fields.
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor
 public class ServiceRequest {
     
