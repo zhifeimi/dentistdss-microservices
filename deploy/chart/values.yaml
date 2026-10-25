@@ -154,6 +154,7 @@ services:
       APP_OAUTH2_AUTHORIZEDREDIRECTURIS_0: https://dentistdss.vercel.app/oauth2/redirect
       APP_OAUTH2_AUTHORIZEDREDIRECTURIS_1: https://dentistgpt.vercel.app/oauth2/redirect
       APP_OAUTH2_AUTHORIZEDREDIRECTURIS_2: https://dentist.mizhifei.press/oauth2/redirect
+      APP_OAUTH2_AUTHORIZEDREDIRECTURIS_3: https://dentist.zhifei.org/oauth2/redirect
   clinic-service:
     port: 8083
     replicas: 1
