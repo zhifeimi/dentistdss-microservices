@@ -64,6 +64,9 @@ MAIL_HOST
 MAIL_PORT
 MAIL_USERNAME
 MAIL_PASSWORD
+OPENAI_BASE_URL
+OPENAI_API_KEY
+OPENAI_MODEL
 ```
 
 (DATA-02: the runtime record no longer carries `SPRING_DATA_MONGODB_URI` /
@@ -76,6 +79,12 @@ may contain, and one ExternalSecret is rendered per entry. Each service then
 lists exactly the Secrets it needs under `services.<name>.secrets`, so a
 compromised pod only reads the credentials for its own databases and keys.
 Keep the record schema above and the `records` map in sync when adding keys.
+
+The `dentistdss-genai` slice exposes only `OPENAI_BASE_URL`, `OPENAI_API_KEY`,
+and `OPENAI_MODEL` to `genai-service` for its single self-hosted
+OpenAI-compatible Chat Completions provider. Seed all three keys in each
+environment's runtime record before applying the chart, even while the GenAI
+Deployment is disabled, because its ExternalSecret still renders.
 
 Each `genai-service-auth` record requires a dedicated gateway-to-GenAI key pair:
 
@@ -213,9 +222,14 @@ Seed each runtime record interactively without printing credentials:
 ./deploy/scripts/seed-vault-runtime.sh prod
 ```
 
+This helper replaces the entire Vault runtime record and generates new
+credentials. Use it only for a fresh install or a planned full rotation; do not
+run it to add GenAI settings to an existing environment. Merge the three
+`OPENAI_*` properties into an existing Vault record with a reviewed CAS update.
+
 The helper generates independent database, Config Server, Redis, fingerprint,
 verification-code pepper, and 3072-bit RSA JWT values. It prompts locally for
-the Vault token, Google OAuth, and SMTP values.
+the Vault token, Google OAuth, SMTP, and OpenAI-compatible endpoint values.
 
 ## Workloads and network policy
 
@@ -226,6 +240,12 @@ consumer in `values.yaml` receives `REDIS_HOST`/`REDIS_PORT` plus the password.
 Production service configuration requires the Redis password with no default,
 so a missing Secret fails startup instead of silently opening an
 unauthenticated connection.
+
+For a private self-hosted GenAI endpoint, set `genaiProviderEgress.cidrs` and
+`genaiProviderEgress.port` in private environment values. The default empty
+CIDR list adds no policy. A configured rule selects only this release's
+`genai-service` pods and allows TCP to those CIDRs on that port. Keep private
+endpoint addresses out of this repository.
 
 NetworkPolicies default-deny the namespace and then allow only:
 

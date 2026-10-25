@@ -119,6 +119,28 @@ spec:
               - 172.16.0.0/12
               - 192.168.0.0/16
 ---
+{{- with .Values.genaiProviderEgress.cidrs }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-genai-provider-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-service
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+{{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+{{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.genaiProviderEgress.port }}
+---
+{{- end }}
 # Databases are excluded from the namespace-internal ingress policy above;
 # only the services that actually persist data may reach them.
 apiVersion: networking.k8s.io/v1

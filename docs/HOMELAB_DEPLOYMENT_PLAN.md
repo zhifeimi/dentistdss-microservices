@@ -108,7 +108,9 @@ application rollback must never silently reverse a schema migration.
 - Google OAuth client ID/secret and authorized origins/redirects
 - SMTP credentials
 - Production JWT key pair
-- Optional Vertex AI project, service account, region, and supported model
+- Optional self-hosted OpenAI-compatible Chat Completions endpoint: base URL
+  including `/v1`, API key, and model (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and
+  `OPENAI_MODEL`)
 
 ## Deferred engineering work
 

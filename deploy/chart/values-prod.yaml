@@ -19,3 +19,7 @@ externalSecrets:
 # and fail fast on OOM instead of limping in a degraded state.
 commonEnv:
   JAVA_TOOL_OPTIONS: -Xms64m -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError
+
+services:
+  genai-service:
+    enabled: true

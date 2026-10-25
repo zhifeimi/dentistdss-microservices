@@ -4,7 +4,9 @@ The primary homelab deployment is the RKE2/Argo CD contract in
 [`chart/`](chart/README.md). This Compose project remains a single-host recovery
 path and local integration environment. It runs the gateway, 12 core Java
 services, PostgreSQL, and MongoDB. The optional `genai-service` is gated behind
-the `ai` profile.
+the `ai` profile and uses one self-hosted OpenAI-compatible Chat Completions
+endpoint. Set `OPENAI_BASE_URL` (including `/v1`), `OPENAI_API_KEY`, and
+`OPENAI_MODEL` in `.env`; no GCP service account is required.
 
 Only the API Gateway loopback port is published. Cloudflare Tunnel maps
 `api.mizhifei.press` to that port. TLS, WAF, and public ingress belong at

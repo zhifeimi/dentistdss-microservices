@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Fresh-install or full-runtime-rotation helper: its Vault KV write replaces
+# the entire record. Do not use it to add keys to an existing environment.
 set -euo pipefail
 
 ENVIRONMENT="${1:-}"
@@ -37,6 +39,11 @@ MAIL_PORT="${MAIL_PORT:-587}"
 read -r -p "SMTP username: " MAIL_USERNAME
 read -r -s -p "SMTP password: " MAIL_PASSWORD
 printf '\n'
+read -r -p "OpenAI-compatible base URL (including /v1): " OPENAI_BASE_URL
+read -r -s -p "OpenAI-compatible API key: " OPENAI_API_KEY
+printf '\n'
+read -r -p "OpenAI-compatible model: " OPENAI_MODEL
+export OPENAI_BASE_URL OPENAI_API_KEY OPENAI_MODEL
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TEMP_DIR}"' EXIT
@@ -122,7 +129,10 @@ jq -n \
       MAIL_HOST: $mail_host,
       MAIL_PORT: $mail_port,
       MAIL_USERNAME: $mail_username,
-      MAIL_PASSWORD: $mail_password
+      MAIL_PASSWORD: $mail_password,
+      OPENAI_BASE_URL: env.OPENAI_BASE_URL,
+      OPENAI_API_KEY: env.OPENAI_API_KEY,
+      OPENAI_MODEL: env.OPENAI_MODEL
       # DATA-02: the legacy root-user MONGODB_URI/SPRING_DATA_MONGODB_URI keys
       # are intentionally gone — per-service mongo URIs live in the
       # db-credentials/* records (seed-vault-db-credentials.sh); no workload

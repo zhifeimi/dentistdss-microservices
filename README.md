@@ -28,7 +28,7 @@ Centralized security architecture where API Gateway handles JWT validation while
 
 ### Other Services
 - **Notification Service**: Port 8088 - Email, SMS, push notifications
-- **GenAI Service**: Port 8084 - AI chatbots, OpenAI integration
+- **GenAI Service**: Port 8084 - AI chatbots, self-hosted OpenAI-compatible integration
 - **Audit Service**: Port 8087 - Activity logging, compliance
 - **Admin Server**: Port 9090 - Service monitoring, health checks
 
@@ -168,7 +168,9 @@ docker-compose up --build -d <service-name>
 ```bash
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-OPENAI_API_KEY=your_openai_api_key
+OPENAI_BASE_URL=https://genai.example.invalid/v1
+OPENAI_API_KEY=your_openai_compatible_api_key
+OPENAI_MODEL=your_openai_compatible_model
 ```
 
 ## Production Deployment
@@ -208,22 +210,24 @@ Images published to Docker Hub: `zm377/dentistdss-microservices:<service>-<tag>`
 - Role-based and clinic-specific customization
 - Template variable substitution
 
-### 3. AI Provider Switching
-- Multi-provider support (OpenAI, Google Vertex AI)
-- Automatic failover and load balancing
-- Configuration-driven provider management
+### 3. OpenAI-Compatible AI Provider
+- One self-hosted OpenAI-compatible Chat Completions endpoint
+- Streaming responses through the existing SSE API
+- Configuration-driven model, temperature, and token limits
 
 ## Configuration
 
 ### AI Provider Configuration
 ```bash
-# Required
-OPENAI_API_KEY=your_openai_api_key
+# Required: one self-hosted OpenAI-compatible Chat Completions endpoint
+OPENAI_BASE_URL=https://genai.example.invalid/v1
+OPENAI_API_KEY=your_openai_compatible_api_key
+OPENAI_MODEL=your_openai_compatible_model
 
-# Optional (Vertex AI)
-VERTEX_AI_ENABLED=false
-VERTEX_AI_PROJECT_ID=your_gcp_project_id
-VERTEX_AI_LOCATION=us-central1
+# Optional
+OPENAI_ENABLED=true
+OPENAI_TEMPERATURE=0.7
+OPENAI_MAX_TOKENS=4096
 ```
 
 ## Testing
