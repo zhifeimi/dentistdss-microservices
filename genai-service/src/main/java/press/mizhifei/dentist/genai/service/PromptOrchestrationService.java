@@ -97,7 +97,7 @@ public class PromptOrchestrationService {
         String basePrompt = template.getSystemPromptTemplate();
         
         // Apply template variable substitution
-        Map<String, String> variables = buildTemplateVariables(userContext, userPrompt, apiProvidedContext);
+        Map<String, String> variables = buildTemplateVariables(userContext);
         String processedPrompt = processTemplateVariables(basePrompt, variables);
         promptBuilder.append(processedPrompt);
 
@@ -139,8 +139,7 @@ public class PromptOrchestrationService {
     /**
      * Builds template variables map for substitution
      */
-    private Map<String, String> buildTemplateVariables(UserContext userContext, 
-                                                      String userPrompt, String apiProvidedContext) {
+    private Map<String, String> buildTemplateVariables(UserContext userContext) {
         Map<String, String> variables = new HashMap<>();
         
         // User context variables
@@ -149,10 +148,9 @@ public class PromptOrchestrationService {
         variables.put("isAuthenticated", String.valueOf(userContext.isAuthenticated()));
         variables.put("clinicId", userContext.getClinicId() != null ? userContext.getClinicId() : "");
         variables.put("sessionId", userContext.getSessionId() != null ? userContext.getSessionId() : "");
-        
-        // Content variables
-        variables.put("userPrompt", userPrompt != null ? userPrompt : "");
-        variables.put("apiContext", apiProvidedContext != null ? apiProvidedContext : "");
+
+        // userPrompt and apiContext are deliberately not substitutable: user
+        // text must only reach the model as a user message, never as system.
         
         // System variables
         variables.put("timestamp", java.time.LocalDateTime.now().toString());
