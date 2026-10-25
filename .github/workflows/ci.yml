@@ -102,8 +102,38 @@ jobs:
             --namespace prod-dentistdss \
             --values deploy/chart/values-prod.yaml \
             >/tmp/dentistdss-prod.yaml
+          helm template dentistdss deploy/chart \
+            --namespace prod-dentistdss \
+            --values deploy/chart/values-prod.yaml \
+            --set 'genaiProviderEgress.cidrs[0]=203.0.113.9/32' \
+            --set genaiProviderEgress.port=443 \
+            >/tmp/dentistdss-prod-genai-egress.yaml
           test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-dev.yaml)" -eq 12
-          test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-prod.yaml)" -eq 12
+          test "$(grep -c '^kind: Deployment$' /tmp/dentistdss-prod.yaml)" -eq 13
+          if grep -q '^  name: allow-genai-provider-egress$' /tmp/dentistdss-prod.yaml; then
+            echo "provider egress policy must be absent without private endpoint CIDRs" >&2
+            exit 1
+          fi
+          awk '
+            /^  name: allow-genai-provider-egress$/ { in_policy = 1; policies++; next }
+            /^---$/ { in_policy = 0 }
+            in_policy {
+              if ($0 == "      app.kubernetes.io/name: genai-service") service = 1
+              if ($0 == "      app.kubernetes.io/instance: dentistdss") release = 1
+              if ($0 == "  policyTypes: [\"Egress\"]") egress_only = 1
+              if ($0 == "            cidr: \"203.0.113.9/32\"") cidr = 1
+              if ($0 == "        - protocol: TCP") protocol = 1
+              if ($0 == "          port: 443") port = 1
+              if ($0 ~ /cidr:/) cidr_count++
+              if ($0 ~ /port:/) port_count++
+            }
+            END {
+              if (policies != 1 || !service || !release || !egress_only || !cidr || !protocol || !port || cidr_count != 1 || port_count != 1) {
+                print "private provider policy must select the configured GenAI release pods and allow only its CIDR and TCP port" > "/dev/stderr"
+                exit 1
+              }
+            }
+          ' /tmp/dentistdss-prod-genai-egress.yaml
           for manifest in /tmp/dentistdss-dev.yaml /tmp/dentistdss-prod.yaml; do
             awk '
               function validate_document() {
