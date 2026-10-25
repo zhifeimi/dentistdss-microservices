@@ -1,10 +1,25 @@
 global:
-  imageTag: bootstrap
-
+  imageTag: sha-f3cb51078f519c267e67aab1baa580e9f725d6fb
+  imageDigests:
+    config-server: sha256:b68aa800f1a2d3bdaf081b9eded3dfeee0139d617d4069a24537e08a590a394f
+    discovery-server: sha256:9370b9c9999d5e8a2fc9b2f5379338a6da79fe2c61577030ae849f33b4bc393a
+    api-gateway: sha256:50822d8bc1fbfc319940cf78d5205cd44fdab87463e77b94292591861416ce8a
+    auth-service: sha256:740126b7f6504928d3a1033379bf7321926ecba57784ceb6efa795beec4a0719
+    clinic-service: sha256:90ee3900ea89d277ac2b3bf4b26a7cb527e672752f23f3224eb63f29d5af42a5
+    appointment-service: sha256:6f0b5c08171a920342812847fb06f51f106ce0e2a511f3a2bd67bef80cc40c95
+    clinical-records-service: sha256:fc913b01a14de0529bd8aed81df723f6fcdbf7fde88380333dd67edaf05c7d81
+    admin-server: sha256:65b58c9a2448460d5b3b03df7cd8542322e03129eed1fcfb22bf4ec0c1c1db6c
+    notification-service: sha256:fb5bae4edf4d8180d6f85a8b9bf253bf096f05f56e2e002d6b922dca611fba8f
+    genai-service: sha256:10f29acdcdfb8bc1d450598ead1a1693556b72daa458262a7c0c3d35b5612c11
+    user-profile-service: sha256:3a8df42b5d51520469e45795786aa85ec8e5e3b1e36981f26850903d80c911b9
+    system-service: sha256:c96fac67309be24b17c787675d1b1244d5ac71b8b3a614e2d65c50231bf5d14e
+    audit-service: sha256:df12cafa2cc39fd99bd35633102ddb0fa8f2a0400fb7a1be159b3c500f4f92e2
+    postgres: sha256:9d14a518c914c27db83bc6ae84c3e9e1861dbb067ab09914eda98d9235137aa0
+    mongo: sha256:7e29d0c141886138e37d8ef183c2a14f5890c16c5b4b29a0b998139d714838f9
+    redis: sha256:6d6874d8e9a34b20181a19fce96943469ccb93f10083b7a13dea74fd3777ef35
 gateway:
   loadBalancerIP: 10.80.20.204
   addressPool: pve-prod-services
-
 externalSecrets:
   vaultServer: https://10.80.0.13:8200
   runtimePath: apps/dentistdss/prod/runtime
@@ -14,12 +29,10 @@ externalSecrets:
   kubernetesAuth:
     mountPath: kubernetes-prod
     role: external-secrets-dentistdss-prod
-
 # Match the dev heap/exit policy so prod containers honor their memory limits
 # and fail fast on OOM instead of limping in a degraded state.
 commonEnv:
   JAVA_TOOL_OPTIONS: -Xms64m -XX:MaxRAMPercentage=50.0 -XX:+ExitOnOutOfMemoryError
-
 services:
   genai-service:
     enabled: true
