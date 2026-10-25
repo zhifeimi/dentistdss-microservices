@@ -1,6 +1,7 @@
 package press.mizhifei.dentist.clinicalrecords.dto;
 
 import jakarta.validation.constraints.Size;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -8,7 +9,9 @@ import lombok.NoArgsConstructor;
 
 @Data
 @Builder
-@AllArgsConstructor
+// Private: Jackson 3 would bind JSON through a visible all-args constructor
+// and drop the @Builder.Default values for omitted fields.
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor
 public class ClinicalNoteRequest {
 
