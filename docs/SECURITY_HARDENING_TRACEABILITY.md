@@ -22,6 +22,7 @@ This document tracks the verified findings addressed by the Java 25 / Spring Clo
 | ERROR-01 | Exception details leak to clients/logs | Shared safe error envelope and redaction | Responses contain no stack/SQL/SMTP/provider/token/PHI detail | Done (see notes) |
 | CORS-01 | CORS and cookie behavior are broader than required | Exact origins/methods/headers, Origin validation, anti-CSRF for cookie endpoints | Hostile Origin and missing/invalid CSRF requests fail | Done (see notes) |
 | SUPPLY-01 | Build inputs and vulnerabilities are not fully gated | Java 25, Enforcer, FindSecBugs, Dependency-Check, SBOM, Trivy, pinned actions/images | CI blocks policy violations and high/critical findings | Done (see notes) |
+| GENAI-01 | GenAI prompts can carry prompt-injection attacks, and user text can be substituted into the system prompt | Normalised known-attack screening (400 before rate limiting/provider), fixed system-prompt guardrail, no user-text template variables | Injection and obfuscated variants fail; ordinary dental text and clinical notes pass; system message carries the guardrail and never the user text | Done (see notes) |
 
 ## Finding notes
 
@@ -423,6 +424,24 @@ storage; the original upload bytes are discarded.
   persistence failure, no-compensation-on-first-write-failure,
   canonical-metadata storage, row-before-blob delete ordering, row
   deletion surviving blob cleanup failure).
+
+### GENAI-01 — done: prompt attack protection
+
+- `GenAIPromptValidator` normalises prompts (NFKD, then strips format
+  characters and combining marks) and rejects known instruction-override,
+  system-prompt exfiltration, jailbreak, chat-template-token, and
+  `system:` role-prefix phrasings with 400 before rate limiting or any
+  provider call. It covers all five chatbot endpoints. This is a
+  heuristic: spacing, leetspeak, synonyms, other languages, and
+  cross-script homoglyphs are not caught.
+- `ChatService` appends a fixed security guardrail to every system
+  message. User text reaches the model only as a user message.
+- `PromptOrchestrationService` no longer substitutes `{{userPrompt}}` or
+  `{{apiContext}}` into system prompt templates. The seeded templates do
+  not use them; a stored template that does now renders them empty.
+- Evidence: `GenAIPromptValidatorTest` (attack and false-positive
+  matrices) and `ChatServiceTest` (`guardsTheSystemPrompt*`,
+  `guardsTheLegacySystemPrompt`).
 
 ## Completion gates
 

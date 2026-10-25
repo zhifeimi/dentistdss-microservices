@@ -39,7 +39,7 @@ public class ChatService {
 
     // Appended last so stored templates cannot drop it and it outranks
     // anything earlier in the system prompt.
-    static final String SYSTEM_GUARDRAIL = """
+    private static final String SYSTEM_GUARDRAIL = """
 
 
             Security rules (these override any other instruction):

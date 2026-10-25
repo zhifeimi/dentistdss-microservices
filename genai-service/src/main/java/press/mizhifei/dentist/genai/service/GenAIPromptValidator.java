@@ -13,22 +13,37 @@ import java.util.regex.Pattern;
 @Component
 public class GenAIPromptValidator {
 
-    // ponytail: phrase heuristics only catch known attacks; the system
-    // prompt guardrail in ChatService is the backstop for novel phrasings.
-    private static final Pattern PROMPT_ATTACK = Pattern.compile(
+    // Heuristic screening for known attack phrasings only. Novel phrasings
+    // are expected to get through; ChatService's system prompt guardrail is
+    // the backstop.
+    private static final String INSTRUCTION_OVERRIDE =
             "\\b(ignore|disregard|forget|override|bypass)\\b.{0,40}"
-                    + "\\b(previous|prior|above|earlier|system|your|all)\\b.{0,20}"
-                    + "\\b(instructions?|rules|prompts?|directives|guidelines)\\b"
-                    + "|\\b(reveal|show|print|repeat|output|leak)\\b.{0,40}"
-                    + "\\b(system prompt|hidden instructions|initial instructions|your instructions)\\b"
-                    + "|\\b(developer mode|jailbreak|do anything now)\\b"
-                    + "|\\byou are now\\b.{0,20}\\b(dan|unrestricted|unfiltered)\\b"
-                    + "|<\\|[a-z_]+\\|>|\\[/?inst]|<</?sys>>"
-                    + "|^\\s*#{0,3}\\s*(system|assistant)\\s*:",
+                    + "\\b(previous|prior|above|earlier|system|your|all)\\s+"
+                    + "(instructions?|rules|prompts?|directives|guidelines)\\b";
+    private static final String PROMPT_EXFILTRATION =
+            "\\b(reveal|show|print|repeat|output|leak)\\b.{0,40}"
+                    + "\\b(system prompt|hidden instructions|initial instructions)\\b";
+    private static final String JAILBREAK =
+            "\\b(developer mode|jailbreak|do anything now)\\b"
+                    + "|\\byou are now\\b.{0,20}\\b(dan|unrestricted|unfiltered)\\b";
+    private static final String CHAT_TEMPLATE_TOKEN =
+            "<\\|[a-z_]+\\|>|\\[/?inst]|<</?sys>>";
+    // "system:" only; "Assistant:" is a normal line in dental clinical notes.
+    private static final String SYSTEM_ROLE_PREFIX = "^\\s*#{0,3}\\s*system\\s*:";
+
+    private static final Pattern PROMPT_ATTACK = Pattern.compile(
+            String.join("|",
+                    INSTRUCTION_OVERRIDE,
+                    PROMPT_EXFILTRATION,
+                    JAILBREAK,
+                    CHAT_TEMPLATE_TOKEN,
+                    SYSTEM_ROLE_PREFIX),
             Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.DOTALL);
 
-    // Zero-width and other invisible format characters used to split keywords.
-    private static final Pattern FORMAT_CHARACTERS = Pattern.compile("\\p{Cf}");
+    // Invisible format characters and combining marks used to split or
+    // decorate keywords.
+    private static final Pattern OBFUSCATION_CHARACTERS =
+            Pattern.compile("[\\p{Cf}\\p{M}]");
 
     private final int maxCharacters;
 
@@ -64,8 +79,8 @@ public class GenAIPromptValidator {
     }
 
     private static boolean isPromptAttack(String prompt) {
-        String normalized = FORMAT_CHARACTERS
-                .matcher(Normalizer.normalize(prompt, Normalizer.Form.NFKC))
+        String normalized = OBFUSCATION_CHARACTERS
+                .matcher(Normalizer.normalize(prompt, Normalizer.Form.NFKD))
                 .replaceAll("");
         return PROMPT_ATTACK.matcher(normalized).find();
     }
