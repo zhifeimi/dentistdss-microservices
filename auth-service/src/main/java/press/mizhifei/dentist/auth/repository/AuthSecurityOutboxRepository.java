@@ -5,11 +5,19 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.auth.model.AuthSecurityOutbox;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * Declared queries get no transaction from Spring Data, and the scheduled
+ * replay/reconcile jobs call {@link #deleteExpired} and (through a
+ * self-invoked {@code enqueueStandalone}) {@link #upsertPending} outside one;
+ * every method joins the caller's transaction or opens its own.
+ */
+@Transactional
 public interface AuthSecurityOutboxRepository extends JpaRepository<AuthSecurityOutbox, Long> {
 
     @Modifying
