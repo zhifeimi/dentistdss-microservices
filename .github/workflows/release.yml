@@ -265,6 +265,8 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db:1
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dentistdss-${{ matrix.service }}:${{ env.BACKEND_TAG }}
           severity: HIGH,CRITICAL
