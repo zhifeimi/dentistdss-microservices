@@ -18,13 +18,9 @@ source "${ENV_FILE}"
 set +a
 
 if [[ ",${COMPOSE_PROFILES:-}," == *",ai,"* ]]; then
-  : "${VERTEX_AI_PROJECT_ID:?VERTEX_AI_PROJECT_ID is required for the ai profile}"
-  : "${GEMINI_MODEL:?GEMINI_MODEL is required for the ai profile}"
-  : "${GCP_CREDENTIALS_PATH:?GCP_CREDENTIALS_PATH is required for the ai profile}"
-  if [[ ! -r "${GCP_CREDENTIALS_PATH}" ]]; then
-    printf 'GCP credentials are not readable: %s\n' "${GCP_CREDENTIALS_PATH}" >&2
-    exit 1
-  fi
+  : "${OPENAI_BASE_URL:?OPENAI_BASE_URL is required for the ai profile}"
+  : "${OPENAI_API_KEY:?OPENAI_API_KEY is required for the ai profile}"
+  : "${OPENAI_MODEL:?OPENAI_MODEL is required for the ai profile}"
 fi
 
 export DOCKER_BUILDKIT=1

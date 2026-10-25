@@ -21,35 +21,35 @@ public class AIProviderService {
     private final ChatClient chatClient;
 
     public Mono<String> chat(Prompt prompt) {
-        if (!config.getGoogleGenAi().isEnabled()) {
-            return Mono.error(new IllegalStateException("Google GenAI provider is disabled"));
+        if (!config.getOpenAi().isEnabled()) {
+            return Mono.error(new IllegalStateException("OpenAI-compatible provider is disabled"));
         }
 
         return Mono.fromSupplier(() -> chatClient.prompt(prompt).call().content())
-                .doOnSuccess(response -> log.debug("Google GenAI chat completed successfully"))
-                .doOnError(error -> log.error("Google GenAI chat failed"));
+                .doOnSuccess(response -> log.debug("OpenAI-compatible chat completed successfully"))
+                .doOnError(error -> log.error("OpenAI-compatible chat failed"));
     }
 
     public Flux<String> streamChat(Prompt prompt) {
-        if (!config.getGoogleGenAi().isEnabled()) {
-            return Flux.error(new IllegalStateException("Google GenAI provider is disabled"));
+        if (!config.getOpenAi().isEnabled()) {
+            return Flux.error(new IllegalStateException("OpenAI-compatible provider is disabled"));
         }
 
         return chatClient.prompt(prompt).stream().content()
-                .doOnNext(chunk -> log.trace("Google GenAI stream chunk received"))
-                .doOnComplete(() -> log.debug("Google GenAI stream completed"))
-                .doOnError(error -> log.error("Google GenAI stream failed"));
+                .doOnNext(chunk -> log.trace("OpenAI-compatible stream chunk received"))
+                .doOnComplete(() -> log.debug("OpenAI-compatible stream completed"))
+                .doOnError(error -> log.error("OpenAI-compatible stream failed"));
     }
 
     public ProviderStatus getProviderStatus() {
         return ProviderStatus.builder()
-                .vertexAiEnabled(config.getGoogleGenAi().isEnabled())
+                .openAiEnabled(config.getOpenAi().isEnabled())
                 .build();
     }
 
     @lombok.Data
     @lombok.Builder
     public static class ProviderStatus {
-        private boolean vertexAiEnabled;
+        private boolean openAiEnabled;
     }
 }

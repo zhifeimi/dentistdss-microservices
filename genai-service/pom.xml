@@ -39,10 +39,10 @@
 
 
 
-        <!-- Spring AI with Google Vertex AI backend -->
+        <!-- Spring AI with a self-hosted OpenAI-compatible backend -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-google-genai</artifactId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
         <!-- Distributed rate limiting and anonymous session validation -->
         <dependency>

@@ -73,6 +73,16 @@ externalSecrets:
       - MAIL_PORT
       - MAIL_USERNAME
       - MAIL_PASSWORD
+    dentistdss-genai:
+      - OPENAI_BASE_URL
+      - OPENAI_API_KEY
+      - OPENAI_MODEL
+
+# Optional exact network ranges for the self-hosted GenAI provider. Keep
+# environment-specific private endpoint addresses in private Argo CD values.
+genaiProviderEgress:
+  cidrs: []
+  port: 443
 
 # Pod affinity for the postgres/mongo/redis StatefulSets, e.g. to keep the
 # databases off a node whose disk is shared with a slow etcd member. Their
@@ -163,9 +173,9 @@ services:
     secrets:
       - dentistdss-mongo-genai
       - dentistdss-redis
+      - dentistdss-genai
     env:
-      VERTEX_AI_ENABLED: "true"
-      VERTEX_AI_LOCATION: australia-southeast1
+      OPENAI_ENABLED: "true"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
   user-profile-service:

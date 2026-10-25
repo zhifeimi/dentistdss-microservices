@@ -490,15 +490,12 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      VERTEX_AI_ENABLED: "true"
-      VERTEX_AI_PROJECT_ID: ${VERTEX_AI_PROJECT_ID:-}
-      VERTEX_AI_LOCATION: ${VERTEX_AI_LOCATION:-australia-southeast1}
-      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      OPENAI_ENABLED: "true"
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:?OPENAI_BASE_URL is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      OPENAI_MODEL: ${OPENAI_MODEL:?OPENAI_MODEL is required}
       GENAI_SERVICE_AUTH_PUBLIC_KEY: ${GENAI_SERVICE_AUTH_PUBLIC_KEY:-}
       GENAI_SERVICE_AUTH_KEY_ID: ${GENAI_SERVICE_AUTH_KEY_ID:-}
-      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-service-account.json
-    volumes:
-      - ${GCP_CREDENTIALS_PATH:-./secrets/gcp-service-account.json}:/run/secrets/gcp-service-account.json:ro
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://localhost:8084/actuator/health >/dev/null"]
       interval: 15s

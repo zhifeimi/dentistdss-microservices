@@ -14,25 +14,20 @@ import org.springframework.context.annotation.Primary;
 @Data
 public class AIProviderConfig {
 
-    private GoogleGenAiConfig googleGenAi = new GoogleGenAiConfig();
+    private OpenAiConfig openAi = new OpenAiConfig();
 
     @Data
-    public static class GoogleGenAiConfig {
+    public static class OpenAiConfig {
         private boolean enabled = true;
-        private String projectId;
-        private String location = "us-central1";
-        private String defaultModel = "gemini-2.5-flash";
-        private int maxTokens = 4096;
-        private double temperature = 0.7;
     }
 
     @Bean("primaryChatClient")
     @Primary
     public ChatClient primaryChatClient(ChatClient.Builder chatClientBuilder) {
-        if (!googleGenAi.enabled) {
-            throw new IllegalStateException("Google GenAI provider is disabled");
+        if (!openAi.enabled) {
+            throw new IllegalStateException("OpenAI-compatible provider is disabled");
         }
-        log.info("Configuring Google GenAI ChatClient in Vertex AI mode");
+        log.info("Configuring OpenAI-compatible ChatClient");
         return chatClientBuilder.build();
     }
 }

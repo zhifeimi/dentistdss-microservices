@@ -41,7 +41,7 @@
         <java.version>25</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <spring-cloud.version>2025.1.4</spring-cloud.version>
-        <spring-ai.version>2.0.0</spring-ai.version>
+        <spring-ai.version>2.0.2</spring-ai.version>
         <!-- SBA minor must match the Boot minor (SBA 4.1 needs Boot 4.1). -->
         <spring-boot-admin.version>4.1.4</spring-boot-admin.version>
         <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
