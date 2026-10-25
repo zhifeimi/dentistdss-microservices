@@ -34,6 +34,7 @@ spring:
                 allowedOrigins:
                   - "http://localhost:3000"
                   - "https://dentist.mizhifei.press"
+                  - "https://dentist.zhifei.org"
                   - "https://dentistdss.vercel.app"
                   - "https://dentistgpt.vercel.app"
                 allowedMethods:
