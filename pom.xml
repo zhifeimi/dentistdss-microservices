@@ -56,7 +56,7 @@
              managed by the current Boot parent. bcprov is transitive (not
              Boot-managed), pinned below. -->
         <bouncycastle.version>1.85</bouncycastle.version>
-        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+        <maven-enforcer-plugin.version>3.7.0</maven-enforcer-plugin.version>
         <!-- 4.10.3.0 bundles SpotBugs 4.10.3 (ASM 9.10.1), the first line that
              parses Java 25 class files; 4.9.x crashes with "Unsupported class
              file major version 69". -->
