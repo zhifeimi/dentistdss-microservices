@@ -60,7 +60,7 @@
         <!-- 4.10.3.0 bundles SpotBugs 4.10.3 (ASM 9.10.1), the first line that
              parses Java 25 class files; 4.9.x crashes with "Unsupported class
              file major version 69". -->
-        <spotbugs-maven-plugin.version>4.10.3.0</spotbugs-maven-plugin.version>
+        <spotbugs-maven-plugin.version>4.10.5.0</spotbugs-maven-plugin.version>
         <findsecbugs-plugin.version>1.14.0</findsecbugs-plugin.version>
         <dependency-check-maven.version>13.0.0</dependency-check-maven.version>
         <cyclonedx-maven-plugin.version>2.9.3</cyclonedx-maven-plugin.version>
