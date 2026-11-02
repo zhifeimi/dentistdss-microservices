@@ -17,7 +17,8 @@ concurrency:
 jobs:
   test:
     name: Maven verify
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 cannot start on the Linux 6.19 kernel used by ubuntu-latest.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
       postgres:

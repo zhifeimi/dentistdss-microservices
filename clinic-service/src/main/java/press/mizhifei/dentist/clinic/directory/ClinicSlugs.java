@@ -99,6 +99,6 @@ public final class ClinicSlugs {
     }
 
     private static String trimHyphens(String value) {
-        return value.replaceAll("^-+", "").replaceAll("-+$", "");
+        return value.replaceAll("^-++", "").replaceAll("-++$", "");
     }
 }
