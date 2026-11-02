@@ -161,6 +161,32 @@ spec:
         key: {{ printf "%s/%s" $dbCredentialsPath $item.svc | quote }}
         property: {{ $item.key }}
 {{- end }}
+{{- /*
+Frontend rebuild trigger (public clinic directory): its own record, so seeding
+it never rewrites the runtime record. clinic-service references the key with
+optional: true, so an unseeded record leaves the trigger dormant instead of
+blocking the pod.
+*/}}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dentistdss-vercel-deploy-hook
+  labels:
+    {{- include "dentistdss.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: SecretStore
+    name: {{ $storeName }}
+  target:
+    name: dentistdss-vercel-deploy-hook
+    creationPolicy: Owner
+  data:
+    - secretKey: VERCEL_DEPLOY_HOOK_URL
+      remoteRef:
+        key: {{ .Values.externalSecrets.vercelDeployHookPath | quote }}
+        property: VERCEL_DEPLOY_HOOK_URL
 {{ if index .Values.services "genai-service" "enabled" }}
 ---
 apiVersion: external-secrets.io/v1

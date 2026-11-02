@@ -128,8 +128,32 @@ API Gateway handles all JWT validation and authorization. Business services rece
 ### Public Endpoints (No Auth Required)
 - Auth: `/api/auth/login`, `/api/auth/signup`, `/oauth2/*`
 - Clinic: `/api/clinic/list/all`, `/api/clinic/search`
+- Public clinic directory: `GET /api/public/clinics`, `GET /api/public/clinics/{slug}` (see below)
 - AI Chatbots: `/api/genai/chatbot/*`
 - Health: `/actuator/health`
+
+### Public Clinic Directory (SEO)
+The frontend build prerenders the `/dentists/{state}/{suburb}/{slug}` clinic
+and suburb pages from two read-only, unauthenticated endpoints served by
+clinic-service:
+
+- `GET /api/public/clinics` returns every listed clinic (`{ generatedAt, clinics }`).
+- `GET /api/public/clinics/{slug}` returns one clinic. A retired slug answers
+  `301` with `Location: /api/public/clinics/{currentSlug}`. An unknown or
+  unlisted clinic answers `404`.
+
+Only clinics that are approved, active and opted in (`listedPublicly`) appear,
+and only public fields are returned (no staff, patients, email or internal
+IDs). Responses carry `Cache-Control: public, max-age=300` and a weak `ETag`,
+and the gateway rate-limits them per client IP (`PUBLIC_API_RATE_LIMIT_*`).
+Clinics opt in at registration (`listedPublicly` in the clinic-admin sign-up)
+or later in clinic settings (`PUT /api/clinic/{id}`, which also takes
+`description`, `website`, `latitude`/`longitude` and `operatingHours`).
+
+clinic-service assigns slugs to newly approved clinics and calls the
+frontend's Vercel Deploy Hook (`VERCEL_DEPLOY_HOOK_URL`, a secret) at most once
+an hour whenever the public data changes. Without the variable, the rebuild
+trigger stays off.
 
 ### User Context Headers
 ```http

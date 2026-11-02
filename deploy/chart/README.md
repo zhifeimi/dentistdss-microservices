@@ -32,6 +32,7 @@ Create these KV v2 records:
 - `kv/apps/dentistdss/dev/service-auth/clinical-records`
 - `kv/apps/dentistdss/dev/service-auth/notification`
 - `kv/apps/dentistdss/dev/db-credentials/{auth,clinic,user-profile,appointment,clinical-records,notification,system,audit,genai}`
+- `kv/apps/dentistdss/dev/vercel-deploy-hook` (optional)
 - `kv/apps/dentistdss/prod/runtime`
 - `kv/apps/dentistdss/prod/genai-service-auth`
 - `kv/apps/dentistdss/prod/service-auth/auth`
@@ -39,6 +40,7 @@ Create these KV v2 records:
 - `kv/apps/dentistdss/prod/service-auth/clinical-records`
 - `kv/apps/dentistdss/prod/service-auth/notification`
 - `kv/apps/dentistdss/prod/db-credentials/{auth,clinic,user-profile,appointment,clinical-records,notification,system,audit,genai}`
+- `kv/apps/dentistdss/prod/vercel-deploy-hook` (optional)
 
 Each environment requires a `vault-dentistdss-token` Secret in its application
 namespace. The token must have read access only to that environment's runtime
@@ -125,6 +127,33 @@ stay dormant and target endpoints reject uncredentialed calls, as before):
 Use a single-line PKCS#8 private key and X.509 public key per pair, and a
 unique `SERVICE_AUTH_KEY_ID` per issuer. Do not reuse the JWT keys or the
 gateway-to-GenAI keys, and never add these values to the broad runtime record.
+
+Each optional `vercel-deploy-hook` record holds the Deploy Hook of the
+`dentistdss` Vercel project (Vercel: Project Settings, Git, Deploy Hooks):
+
+```text
+VERCEL_DEPLOY_HOOK_URL   # https://api.vercel.com/v1/integrations/deploy/prj_.../...
+```
+
+Only `clinic-service` reads it (secret `dentistdss-vercel-deploy-hook`,
+`optional: true`). When the public clinic directory changes (a clinic is
+approved, edits its public details, opts in or out, or is removed),
+clinic-service calls the hook at most once an hour so Vercel re-prerenders the
+clinic and suburb pages. Until the record is seeded the trigger stays dormant
+and the ExternalSecret reports a sync error; the API itself is unaffected. The
+URL is a credential — anyone holding it can start deployments — so keep it out
+of the runtime record and seed it on its own (a KV write replaces the whole
+record):
+
+```bash
+vault kv put kv/apps/dentistdss/prod/vercel-deploy-hook \
+  VERCEL_DEPLOY_HOOK_URL='https://api.vercel.com/v1/integrations/deploy/...'
+```
+
+Leave the dev record unseeded, or point it at a preview-branch hook, so a dev
+cluster never rebuilds the production site. The SecretStore's Vault role must
+be able to read this path, like the other records. `clinic-service` carries
+`externalEgress: true` for this call.
 
 Each `db-credentials/<service>` record holds that service's database
 credentials (DATA-02). JDBC services hold their PostgreSQL role name and
@@ -258,7 +287,8 @@ NetworkPolicies default-deny the namespace and then allow only:
 - gateway-to-GenAI and external LoadBalancer ingress to `api-gateway`;
 - DNS egress to `kube-system` and selected external egress for pods labeled
   `dentistdss.io/external-egress: "true"` (CGNAT and link-local ranges stay
-  blocked).
+  blocked): `auth-service`, `notification-service`, `genai-service`, and
+  `clinic-service` (the frontend's Vercel Deploy Hook).
 
 When a service gains or loses a database dependency, update both its
 `secrets` list and the matching `allow-*-clients` policy.

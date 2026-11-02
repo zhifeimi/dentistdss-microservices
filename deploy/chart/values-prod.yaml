@@ -11,6 +11,7 @@ externalSecrets:
   genaiServiceAuthPath: apps/dentistdss/prod/genai-service-auth
   serviceAuthPath: apps/dentistdss/prod/service-auth
   dbCredentialsPath: apps/dentistdss/prod/db-credentials
+  vercelDeployHookPath: apps/dentistdss/prod/vercel-deploy-hook
   kubernetesAuth:
     mountPath: kubernetes-prod
     role: external-secrets-dentistdss-prod
