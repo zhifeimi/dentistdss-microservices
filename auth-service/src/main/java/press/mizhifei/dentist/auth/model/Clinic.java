@@ -66,6 +66,13 @@ public class Clinic {
     private String logoUrl;
     
 
+    // "Show my clinic in public search" (public clinic directory). Owned by
+    // clinic-service after registration; slug, location and opening hours are
+    // mapped there only.
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean listedPublicly = false;
+
     @Builder.Default
     private Boolean enabled = false;
     @Builder.Default

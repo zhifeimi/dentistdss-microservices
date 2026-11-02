@@ -274,11 +274,43 @@ class AuthServiceOnboardingSecurityTest {
         assertEquals(42L, savedClinic.getAdmin().getId());
         assertFalse(savedClinic.getApproved());
         assertFalse(savedClinic.getEnabled());
+        // Public listing is opt-in; no agreement in the request means unlisted.
+        assertFalse(savedClinic.getListedPublicly());
         assertEquals(User.ApprovalStatus.PENDING,
                 savedClinic.getAdmin().getApprovalStatus());
         verify(userApprovalService).createApprovalRequest(
                 42L, "Clinic admin sign up for New Clinic");
         verify(notificationServiceClient).sendVerificationEmail(any());
+    }
+
+    @Test
+    void clinicAdminSignupListsClinicPubliclyOnlyWithAgreement() {
+        when(userRepository.findByEmail("applicant@example.com"))
+                .thenReturn(Optional.empty());
+        when(clinicRepository.findByEmail("clinic@example.com"))
+                .thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            user.setId(42L);
+            return user;
+        });
+        when(clinicRepository.save(any(Clinic.class))).thenAnswer(invocation -> {
+            Clinic clinic = invocation.getArgument(0);
+            clinic.setId(9L);
+            return clinic;
+        });
+        when(userApprovalService.createApprovalRequest(anyLong(), anyString()))
+                .thenReturn(successfulApproval());
+        SignUpClinicAdminRequest request = clinicAdminRequest();
+        request.setListedPublicly(true);
+
+        assertTrue(authService.registerClinicAdmin(request).isSuccess());
+
+        ArgumentCaptor<Clinic> clinicCaptor = ArgumentCaptor.forClass(Clinic.class);
+        verify(clinicRepository).save(clinicCaptor.capture());
+        assertTrue(clinicCaptor.getValue().getListedPublicly());
+        // Agreeing to be listed never skips approval.
+        assertFalse(clinicCaptor.getValue().getApproved());
     }
 
     @Test
@@ -688,6 +720,7 @@ class AuthServiceOnboardingSecurityTest {
                 "0212345678",
                 "clinic@example.com",
                 "https://clinic.example.com",
+                null,
                 "Clinic",
                 "Applicant",
                 "applicant@example.com",
