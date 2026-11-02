@@ -44,7 +44,7 @@
         <spring-ai.version>2.0.2</spring-ai.version>
         <!-- SBA minor must match the Boot minor (SBA 4.1 needs Boot 4.1). -->
         <spring-boot-admin.version>4.1.4</spring-boot-admin.version>
-        <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
+        <springdoc-openapi.version>3.2.0</springdoc-openapi.version>
         <google-api-client.version>2.9.0</google-api-client.version>
         <google-http-client.version>2.2.0</google-http-client.version>
         <!-- Trivy image gate (SUPPLY-01): the patch-level overrides that ran
