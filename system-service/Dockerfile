@@ -1,5 +1,5 @@
 # eclipse-temurin:25-jre-jammy (digest refreshed by dependabot)
-FROM eclipse-temurin:25-jre-jammy@sha256:e0d8c47eccd7ec82d635542dfcd1f2b1293add6bdd7ffbeb650f8ec1b1335425
+FROM eclipse-temurin:25-jre-jammy@sha256:659b528cca74a0edc5c25315ec5819f35bce40bbcec645c4c534987e4c6be7c1
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends curl \
