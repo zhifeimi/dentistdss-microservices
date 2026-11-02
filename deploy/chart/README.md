@@ -139,8 +139,8 @@ Only `clinic-service` reads it (secret `dentistdss-vercel-deploy-hook`,
 `optional: true`). When the public clinic directory changes (a clinic is
 approved, edits its public details, opts in or out, or is removed),
 clinic-service calls the hook at most once an hour so Vercel re-prerenders the
-clinic and suburb pages. Until the record is seeded the trigger stays dormant
-and the ExternalSecret reports a sync error; the API itself is unaffected. The
+clinic and suburb pages. If the record is absent at pod startup, the trigger stays
+dormant and the ExternalSecret reports a sync error; the API itself is unaffected. The
 URL is a credential — anyone holding it can start deployments — so keep it out
 of the runtime record and seed it on its own (a KV write replaces the whole
 record):
@@ -148,6 +148,17 @@ record):
 ```bash
 vault kv put kv/apps/dentistdss/prod/vercel-deploy-hook \
   VERCEL_DEPLOY_HOOK_URL='https://api.vercel.com/v1/integrations/deploy/...'
+```
+
+After late seeding or rotation, wait for the ExternalSecret to synchronize the
+new value: its `Ready` condition must be true and its `status.refreshTime` must
+advance past the Vault write. Then roll clinic-service so it reads the new Secret;
+running containers do not reload Secret-backed environment variables:
+
+```bash
+kubectl -n prod-dentistdss get externalsecret dentistdss-vercel-deploy-hook
+kubectl -n prod-dentistdss rollout restart deployment/clinic-service
+kubectl -n prod-dentistdss rollout status deployment/clinic-service --timeout=180s
 ```
 
 Leave the dev record unseeded, or point it at a preview-branch hook, so a dev

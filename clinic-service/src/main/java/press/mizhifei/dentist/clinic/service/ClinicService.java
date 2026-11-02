@@ -107,7 +107,7 @@ public class ClinicService {
 
     @Transactional
     public ClinicResponse updateClinic(Long id, ClinicUpdateRequest request) {
-        Clinic clinic = clinicRepository.findById(id)
+        Clinic clinic = clinicRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + id));
 
         // Update only non-null fields

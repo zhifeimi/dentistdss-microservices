@@ -56,7 +56,7 @@ class ClinicServicePublicSettingsTest {
                 .approved(true).enabled(true).slug("smile-dental-parramatta").updatedAt(LAST_EDIT).build();
         monday = hours(10L, 1, "08:30", "17:30", true);
         tuesday = hours(11L, 2, "08:30", "17:30", true);
-        when(clinicRepository.findById(7L)).thenReturn(Optional.of(clinic));
+        when(clinicRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(clinic));
         when(clinicRepository.save(any(Clinic.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(hoursRepository.findByClinicIdOrderByDayOfWeekAsc(7L))
                 .thenReturn(new ArrayList<>(List.of(monday, tuesday)));
@@ -143,7 +143,7 @@ class ClinicServicePublicSettingsTest {
         verify(slugService).refreshSlug(eq(clinic), any());
 
         Clinic pending = Clinic.builder().id(8L).name("Pending").approved(false).enabled(false).build();
-        when(clinicRepository.findById(8L)).thenReturn(Optional.of(pending));
+        when(clinicRepository.findByIdForUpdate(8L)).thenReturn(Optional.of(pending));
         when(hoursRepository.findByClinicIdOrderByDayOfWeekAsc(8L)).thenReturn(List.of());
         service.updateClinic(8L, rename);
         verify(slugService, never()).refreshSlug(eq(pending), any());

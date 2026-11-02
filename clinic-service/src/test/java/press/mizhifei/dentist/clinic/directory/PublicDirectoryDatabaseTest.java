@@ -21,6 +21,10 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
 import press.mizhifei.dentist.clinic.directory.PublicDirectorySyncService.Outcome;
 import press.mizhifei.dentist.clinic.dto.PublicClinicResponse;
+import press.mizhifei.dentist.clinic.dto.ClinicUpdateRequest;
+import press.mizhifei.dentist.clinic.dto.OperatingHoursDto;
+import press.mizhifei.dentist.clinic.repository.ClinicOperatingHoursRepository;
+import press.mizhifei.dentist.clinic.service.ClinicService;
 import press.mizhifei.dentist.clinic.model.Clinic;
 import press.mizhifei.dentist.clinic.repository.ClinicRepository;
 import press.mizhifei.dentist.clinic.repository.ClinicSlugHistoryRepository;
@@ -28,16 +32,27 @@ import press.mizhifei.dentist.clinic.repository.PublicDirectorySyncStateReposito
 import press.mizhifei.dentist.db.SchemaContract;
 
 import javax.sql.DataSource;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TimeZone;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * The public directory against a real PostgreSQL database migrated with the
@@ -71,6 +86,12 @@ class PublicDirectoryDatabaseTest {
     private CountingTrigger trigger;
     @Autowired
     private TransactionTemplate transactionTemplate;
+    @Autowired
+    private ClinicOperatingHoursRepository hoursRepository;
+    @Autowired
+    private PublicDirectorySyncStateRepository syncStateRepository;
+    @Autowired
+    private PublicDirectoryProperties properties;
 
     @BeforeAll
     static void migrate() {
@@ -202,6 +223,164 @@ class PublicDirectoryDatabaseTest {
         }
         assertThat(syncService.assignMissingSlugs()).isGreaterThanOrEqualTo(1);
         assertThat(slugOf(id)).isNotNull();
+    }
+
+    @Test
+    void slugAssignmentCannotUndoACommittedOptOut() throws Exception {
+        long id = insertClinic("Consent Dental " + RUN, "Ryde", "NSW", true, true);
+        CountDownLatch loaded = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        ClinicRepository paused = pauseAfterRead(ClinicRepository.class, clinicRepository,
+                "findApprovedWithoutSlug", loaded, resume);
+        PublicDirectorySyncService worker = new PublicDirectorySyncService(paused, syncStateRepository,
+                slugService, directoryService, trigger, transactionTemplate.getTransactionManager(),
+                Clock.systemUTC(), properties);
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var assignment = executor.submit(worker::assignMissingSlugs);
+            try {
+                assertThat(loaded.await(10, TimeUnit.SECONDS)).isTrue();
+                ClinicUpdateRequest optOut = new ClinicUpdateRequest();
+                optOut.setListedPublicly(false);
+                transactionTemplate.executeWithoutResult(status -> settingsService(hoursRepository).updateClinic(id, optOut));
+            } finally {
+                resume.countDown();
+            }
+            assignment.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(jdbc.queryForObject("select listed_publicly from clinics where id = ?", Boolean.class, id)).isFalse();
+        assertThat(directoryService.findBySlug(slugOf(id))).isInstanceOf(PublicClinicDirectoryService.NotFound.class);
+    }
+
+    @Test
+    void slugInitializationDoesNotNormalizeUnrelatedExistingNames() {
+        String name = "Harbour Dental " + RUN;
+        long first = insertClinic(name, "Ryde", "NSW", true, true);
+        long second = insertClinic(name + " ", "Ryde", "NSW", true, true);
+
+        assertThat(syncService.assignMissingSlugs()).isGreaterThanOrEqualTo(2);
+
+        assertThat(slugOf(first)).isNotNull();
+        assertThat(slugOf(second)).isNotNull().isNotEqualTo(slugOf(first));
+        assertThat(jdbc.queryForObject("select name from clinics where id = ?", String.class, second)).isEqualTo(name + " ");
+    }
+
+    @Test
+    void numericNameRenameReclaimsTheOwnedOriginalSlug() {
+        String name = "Ryde Dental " + RUN;
+        long id = insertClinic(name, "Ryde", "NSW", true, true);
+        syncService.assignMissingSlugs();
+        String original = slugOf(id);
+        String numbered = rename(id, name + " 2");
+        assertThat(numbered).isEqualTo(original + "-2");
+
+        assertThat(rename(id, name)).isEqualTo(original);
+        assertThat(slugHistoryRepository.findById(original)).isEmpty();
+        assertThat(directoryService.findBySlug(numbered))
+                .isEqualTo(new PublicClinicDirectoryService.MovedPermanently(original));
+    }
+
+    @Test
+    void numericNameRenameReclaimsAnOwnedCollisionSuffixedSlug() {
+        String name = "Ryde Dental " + RUN;
+        insertClinic(name + "!", "Ryde", "NSW", true, true);
+        long id = insertClinic(name, "Ryde", "NSW", true, true);
+        syncService.assignMissingSlugs();
+        String original = slugOf(id);
+        assertThat(original).endsWith("-2");
+        String numbered = rename(id, name + " 3");
+        assertThat(numbered).endsWith("-3");
+
+        assertThat(rename(id, name)).isEqualTo(original);
+        assertThat(slugHistoryRepository.findById(original)).isEmpty();
+        assertThat(directoryService.findBySlug(numbered))
+                .isEqualTo(new PublicClinicDirectoryService.MovedPermanently(original));
+    }
+
+    @Test
+    void slugInitializationUsesTheLocalClinicTimestampZone() {
+        long id = insertClinic("Timezone Dental " + RUN, "Ryde", "NSW", true, true);
+        TimeZone originalZone = TimeZone.getDefault();
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Australia/Sydney"));
+            Clock clock = Clock.fixed(Instant.parse("2026-11-02T10:00:00Z"), ZoneOffset.UTC);
+            PublicDirectorySyncService worker = new PublicDirectorySyncService(clinicRepository,
+                    syncStateRepository, slugService, directoryService, trigger,
+                    transactionTemplate.getTransactionManager(), clock, properties);
+
+            worker.assignMissingSlugs();
+
+            assertThat(jdbc.queryForObject("select updated_at from clinics where id = ?", LocalDateTime.class, id))
+                    .isEqualTo(LocalDateTime.of(2026, 11, 2, 21, 0));
+        } finally {
+            TimeZone.setDefault(originalZone);
+        }
+    }
+
+    @Test
+    void concurrentScheduleReplacementsAreSerializedPerClinic() throws Exception {
+        long id = insertClinic("Schedule Dental " + RUN, "Ryde", "NSW", true, true);
+        syncService.assignMissingSlugs();
+        CountDownLatch read = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        ClinicOperatingHoursRepository paused = pauseAfterRead(ClinicOperatingHoursRepository.class,
+                hoursRepository, "findByClinicIdOrderByDayOfWeekAsc", read, resume);
+        ClinicUpdateRequest monday = new ClinicUpdateRequest();
+        monday.setOperatingHours(List.of(new OperatingHoursDto(1, "09:00", "17:00", true)));
+        ClinicUpdateRequest tuesday = new ClinicUpdateRequest();
+        tuesday.setOperatingHours(List.of(new OperatingHoursDto(2, "09:00", "17:00", true)));
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> transactionTemplate.executeWithoutResult(
+                    status -> settingsService(paused).updateClinic(id, monday)));
+            try {
+                assertThat(read.await(10, TimeUnit.SECONDS)).isTrue();
+                CountDownLatch started = new CountDownLatch(1);
+                var second = executor.submit(() -> {
+                    started.countDown();
+                    transactionTemplate.executeWithoutResult(status -> settingsService(hoursRepository).updateClinic(id, tuesday));
+                });
+                try {
+                    assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
+                    assertThatExceptionOfType(TimeoutException.class)
+                            .isThrownBy(() -> second.get(500, TimeUnit.MILLISECONDS));
+                } finally {
+                    resume.countDown();
+                }
+                first.get(10, TimeUnit.SECONDS);
+                second.get(10, TimeUnit.SECONDS);
+            } finally {
+                resume.countDown();
+            }
+        }
+        assertThat(hoursRepository.findByClinicIdOrderByDayOfWeekAsc(id))
+                .extracting(press.mizhifei.dentist.clinic.model.ClinicOperatingHours::getDayOfWeek)
+                .containsExactly(2);
+    }
+
+    private ClinicService settingsService(ClinicOperatingHoursRepository hours) {
+        return new ClinicService(clinicRepository, null, null, null, hours, slugService);
+    }
+
+    private static <T> T pauseAfterRead(Class<T> type, T target, String methodName,
+            CountDownLatch read, CountDownLatch resume) {
+        return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type},
+                (proxy, method, args) -> {
+                    Object result;
+                    try {
+                        result = method.invoke(target, args);
+                    } catch (InvocationTargetException ex) {
+                        throw ex.getCause();
+                    }
+                    if (method.getName().equals(methodName) && read.getCount() > 0) {
+                        read.countDown();
+                        if (!resume.await(10, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("Timed out waiting for concurrent clinic edit");
+                        }
+                    }
+                    return result;
+                }));
     }
 
     private long insertClinic(String name, String suburb, String state, boolean approved, boolean listed) {

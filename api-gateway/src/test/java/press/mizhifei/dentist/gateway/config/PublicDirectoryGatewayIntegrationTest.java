@@ -2,6 +2,8 @@ package press.mizhifei.dentist.gateway.config;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -28,6 +30,7 @@ import press.mizhifei.dentist.gateway.service.AnonymousSessionService;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -85,14 +88,18 @@ class PublicDirectoryGatewayIntegrationTest {
         webTestClient = WebTestClient.bindToServer().baseUrl("http://localhost:" + port).build();
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/public/clinics", "/api/%70ublic/clinics",
+            "/%61pi/public/clinics", "/%61pi/%70ublic/clinics"
+    })
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void anonymousDirectoryRequestIsRoutedWithItsCachingHeadersIntact() {
+    void anonymousDirectoryRequestIsRoutedWithItsCachingHeadersIntact(String path) {
         when(redisTemplate.execute(any(DefaultRedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(Flux.just(0L));
 
         webTestClient.get()
-                .uri("/api/public/clinics")
+                .uri(URI.create("http://localhost:" + port + path))
                 .exchange()
                 .expectStatus().isOk()
                 // Spring Security must not replace clinic-service's cache policy.
@@ -103,30 +110,40 @@ class PublicDirectoryGatewayIntegrationTest {
 
         assertEquals(1, stubClinicService.invocations.get());
         assertEquals("clinic-service-public-directory", stubClinicService.routeId.get());
+        verify(redisTemplate).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/public/clinics/smile-dental-parramatta",
+            "/api/%70ublic/clinics/smile-dental-parramatta"
+    })
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void singleClinicRouteIsAnonymousToo() {
+    void singleClinicRouteIsAnonymousToo(String path) {
         when(redisTemplate.execute(any(DefaultRedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(Flux.just(0L));
 
         webTestClient.get()
-                .uri("/api/public/clinics/smile-dental-parramatta")
+                .uri(URI.create("http://localhost:" + port + path))
                 .exchange()
                 .expectStatus().isOk();
 
         assertEquals("clinic-service-public-directory", stubClinicService.routeId.get());
+        verify(redisTemplate).execute(any(DefaultRedisScript.class), anyList(), any(Object[].class));
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/public/clinics", "/api/%70ublic/clinics",
+            "/%61pi/public/clinics", "/%61pi/%70ublic/clinics"
+    })
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void fullWindowAnswersTooManyRequestsWithoutReachingClinicService() {
+    void fullWindowAnswersTooManyRequestsWithoutReachingClinicService(String path) {
         when(redisTemplate.execute(any(DefaultRedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(Flux.just(1_200L));
 
         webTestClient.get()
-                .uri("/api/public/clinics")
+                .uri(URI.create("http://localhost:" + port + path))
                 .exchange()
                 .expectStatus().isEqualTo(HttpStatus.TOO_MANY_REQUESTS)
                 .expectHeader().valueEquals(HttpHeaders.RETRY_AFTER, "2")
@@ -136,14 +153,18 @@ class PublicDirectoryGatewayIntegrationTest {
         assertEquals(0, stubClinicService.invocations.get());
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "/api/public/clinics", "/api/%70ublic/clinics",
+            "/%61pi/public/clinics", "/%61pi/%70ublic/clinics"
+    })
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void unavailableRateLimitStateFailsClosed() {
+    void unavailableRateLimitStateFailsClosed(String path) {
         when(redisTemplate.execute(any(DefaultRedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(Flux.error(new DataAccessResourceFailureException("down")));
 
         webTestClient.get()
-                .uri("/api/public/clinics")
+                .uri(URI.create("http://localhost:" + port + path))
                 .exchange()
                 .expectStatus().isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
 

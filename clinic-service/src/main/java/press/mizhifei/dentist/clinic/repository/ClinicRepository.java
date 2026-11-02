@@ -1,6 +1,8 @@
 package press.mizhifei.dentist.clinic.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -22,6 +24,10 @@ import java.util.Optional;
 @Repository
 public interface ClinicRepository extends JpaRepository<Clinic, Long> {
     List<Clinic> findByEnabledTrue();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from Clinic c where c.id = :id")
+    Optional<Clinic> findByIdForUpdate(@Param("id") Long id);
 
     @Query("SELECT c FROM Clinic c WHERE c.enabled = true " +
             "AND (:keywords IS NULL OR :keywords = '' OR " +
@@ -53,6 +59,13 @@ public interface ClinicRepository extends JpaRepository<Clinic, Long> {
     @Query("select c from Clinic c where c.approved = true and c.enabled = true "
             + "and c.slug is null order by c.id")
     List<Clinic> findApprovedWithoutSlug();
+
+    /** Initialize only the owned fields; never flush a stale clinic profile or consent. */
+    @Modifying
+    @Query("update Clinic c set c.slug = :slug, c.updatedAt = :updatedAt where c.id = :id "
+            + "and c.slug is null and c.approved = true and c.enabled = true")
+    int assignSlugIfMissing(@Param("id") Long id, @Param("slug") String slug,
+            @Param("updatedAt") LocalDateTime updatedAt);
 
     boolean existsBySlug(String slug);
 

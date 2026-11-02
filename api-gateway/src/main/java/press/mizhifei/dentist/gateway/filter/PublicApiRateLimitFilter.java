@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import press.mizhifei.dentist.gateway.service.PublicApiRateLimiter;
 import reactor.core.publisher.Mono;
 
@@ -25,6 +27,8 @@ import java.time.Duration;
 public class PublicApiRateLimitFilter implements GlobalFilter, Ordered {
 
     public static final String PUBLIC_API_PATH = "/api/public";
+    private static final PathPattern PUBLIC_API_PATTERN =
+            PathPatternParser.defaultInstance.parse(PUBLIC_API_PATH + "/**");
     private static final byte[] TOO_MANY_REQUESTS_BODY =
             "{\"success\":false,\"message\":\"Too many requests\"}".getBytes(StandardCharsets.UTF_8);
 
@@ -36,17 +40,13 @@ public class PublicApiRateLimitFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        if (!isPublicApi(exchange.getRequest().getPath().value())) {
+        if (!PUBLIC_API_PATTERN.matches(exchange.getRequest().getPath().pathWithinApplication())) {
             return chain.filter(exchange);
         }
         return rateLimiter.tryAcquire(exchange.getRequest())
                 .flatMap(decision -> decision.allowed()
                         ? chain.filter(exchange)
                         : tooManyRequests(exchange.getResponse(), decision.retryAfter()));
-    }
-
-    static boolean isPublicApi(String path) {
-        return path.equals(PUBLIC_API_PATH) || path.startsWith(PUBLIC_API_PATH + "/");
     }
 
     private Mono<Void> tooManyRequests(ServerHttpResponse response, Duration retryAfter) {

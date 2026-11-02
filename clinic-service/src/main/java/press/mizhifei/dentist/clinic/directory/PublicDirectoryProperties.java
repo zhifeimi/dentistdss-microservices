@@ -36,8 +36,8 @@ public record PublicDirectoryProperties(
     /**
      * @param url            the Deploy Hook URL — a secret (anyone holding it can
      *                       trigger deployments); empty disables the trigger
-     * @param minInterval    at most one successful call per this interval
-     * @param retryInterval  wait after a failed call before trying again
+     * @param minInterval    at most one attempt per this interval, including failures and unknown outcomes
+     * @param retryInterval  failed/unknown attempt cooldown; may extend but never shorten minInterval
      * @param connectTimeout connect timeout of the hook call
      * @param readTimeout    response timeout of the hook call
      */

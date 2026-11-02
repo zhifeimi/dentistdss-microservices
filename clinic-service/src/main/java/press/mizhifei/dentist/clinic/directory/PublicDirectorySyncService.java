@@ -12,6 +12,8 @@ import press.mizhifei.dentist.clinic.repository.PublicDirectorySyncStateReposito
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,9 +26,9 @@ import java.util.Optional;
  * <ol>
  *   <li>assigns slugs to newly approved clinics, then</li>
  *   <li>fingerprints the public directory (the same value as its ETag) and,
- *       when it differs from the one last published, calls the Deploy Hook —
- *       at most once per {@code min-interval} (default one hour), so a burst
- *       of edits causes one rebuild, not one per edit.</li>
+ *       when it differs from the last confirmed hook payload or a previous
+ *       attempt is unresolved, calls the Deploy Hook — at most one attempt per
+ *       {@code min-interval} (default one hour), including failures.</li>
  * </ol>
  * Edits to fields that are not public (email, staff) never trigger a rebuild.
  *
@@ -47,9 +49,9 @@ public class PublicDirectorySyncService {
         BUSY,
         /** The published pages already match the data. */
         UP_TO_DATE,
-        /** Changed, but the last rebuild was triggered less than min-interval ago. */
+        /** Changed or unresolved, but the last attempt was less than min-interval ago. */
         THROTTLED,
-        /** Changed, but the last attempt failed less than retry-interval ago. */
+        /** A failed/unresolved attempt is still within a longer retry-interval. */
         BACKING_OFF,
         TRIGGERED,
         FAILED
@@ -98,13 +100,15 @@ public class PublicDirectorySyncService {
                 return 0;
             }
             List<Clinic> pending = clinicRepository.findApprovedWithoutSlug();
-            LocalDateTime now = now();
+            // Clinic timestamps are JVM-local; sync coordination timestamps are UTC.
+            LocalDateTime now = LocalDateTime.now(clock.withZone(ZoneId.systemDefault()));
+            int assignedCount = 0;
             for (Clinic clinic : pending) {
-                slugService.refreshSlug(clinic, now);
-                // Flush per clinic so the next allocation sees this slug as taken.
-                clinicRepository.saveAndFlush(clinic);
+                if (slugService.assignMissingSlug(clinic, now)) {
+                    assignedCount++;
+                }
             }
-            return pending.size();
+            return assignedCount;
         });
         return assigned == null ? 0 : assigned;
     }
@@ -121,62 +125,67 @@ public class PublicDirectorySyncService {
         try {
             rebuildTrigger.trigger();
         } catch (FrontendRebuildTrigger.RebuildTriggerException ex) {
-            recordFailure(ex.getMessage());
-            log.warn("Frontend rebuild trigger failed ({}); retrying in {} at the earliest",
-                    ex.getMessage(), retryInterval);
+            recordFailure(claim, ex.getMessage());
+            log.warn("Frontend rebuild trigger failed ({}); retrying after both min-interval {} and retry-interval {}",
+                    ex.getMessage(), minInterval, retryInterval);
             return Outcome.FAILED;
         }
-        recordSuccess(claim.fingerprint());
+        recordSuccess(claim);
         log.info("Triggered a frontend rebuild for a public clinic directory change");
         return Outcome.TRIGGERED;
     }
 
-    /** Either a decided outcome (nothing to do) or a claimed attempt for {@code fingerprint}. */
-    private record Claim(Outcome outcome, String fingerprint) {
+    /** A decided outcome or an attempt owned by its durable, microsecond-precision timestamp. */
+    private record Claim(Outcome outcome, String fingerprint, LocalDateTime attemptedAt) {
     }
 
     private Claim claimAttempt() {
         Optional<PublicDirectorySyncState> locked = syncStateRepository.lockSingleton();
         if (locked.isEmpty()) {
-            return new Claim(Outcome.BUSY, null);
+            return new Claim(Outcome.BUSY, null, null);
         }
         PublicDirectorySyncState state = locked.get();
         String fingerprint = directoryService.currentFingerprint();
         if (fingerprint.equals(state.getPublishedFingerprint())) {
-            return new Claim(Outcome.UP_TO_DATE, null);
+            return new Claim(Outcome.UP_TO_DATE, null, null);
         }
-        LocalDateTime now = now();
-        if (state.getLastHookAt() != null && now.isBefore(state.getLastHookAt().plus(minInterval))) {
-            return new Claim(Outcome.THROTTLED, null);
+        LocalDateTime now = now().truncatedTo(ChronoUnit.MICROS);
+        if ((state.getLastAttemptAt() != null && now.isBefore(state.getLastAttemptAt().plus(minInterval)))
+                || (state.getLastHookAt() != null && now.isBefore(state.getLastHookAt().plus(minInterval)))) {
+            return new Claim(Outcome.THROTTLED, null, null);
         }
         boolean lastAttemptFailed = state.getLastAttemptAt() != null
                 && (state.getLastHookAt() == null || state.getLastAttemptAt().isAfter(state.getLastHookAt()));
         if (lastAttemptFailed && now.isBefore(state.getLastAttemptAt().plus(retryInterval))) {
-            return new Claim(Outcome.BACKING_OFF, null);
+            return new Claim(Outcome.BACKING_OFF, null, null);
         }
-        // Claiming the attempt before the call keeps other replicas (and a
-        // restart mid-call) from calling the hook again within retry-interval.
+        // Commit the full cooldown and mark publication unknown before the POST:
+        // acceptance followed by a crash must not hide a later return to the old payload.
+        state.setPublishedFingerprint(null);
         state.setLastAttemptAt(now);
         syncStateRepository.save(state);
-        return new Claim(null, fingerprint);
+        return new Claim(null, fingerprint, now);
     }
 
-    private void recordSuccess(String fingerprint) {
+    private void recordSuccess(Claim claim) {
+        // A busy row remains unresolved; a delayed finalizer must not overwrite a newer claim.
         transactionTemplate.executeWithoutResult(status -> syncStateRepository
-                .findById(PublicDirectorySyncState.SINGLETON_ID)
+                .lockSingleton()
+                .filter(state -> claim.attemptedAt().equals(state.getLastAttemptAt()))
                 .ifPresent(state -> {
-                    state.setPublishedFingerprint(fingerprint);
-                    state.setLastHookAt(state.getLastAttemptAt() != null ? state.getLastAttemptAt() : now());
+                    state.setPublishedFingerprint(claim.fingerprint());
+                    state.setLastHookAt(claim.attemptedAt());
                     state.setLastError(null);
                     syncStateRepository.save(state);
                 }));
     }
 
-    private void recordFailure(String error) {
+    private void recordFailure(Claim claim, String error) {
         String message = error == null ? "unknown error" : error;
         String truncated = message.length() > MAX_ERROR_LENGTH ? message.substring(0, MAX_ERROR_LENGTH) : message;
         transactionTemplate.executeWithoutResult(status -> syncStateRepository
-                .findById(PublicDirectorySyncState.SINGLETON_ID)
+                .lockSingleton()
+                .filter(state -> claim.attemptedAt().equals(state.getLastAttemptAt()))
                 .ifPresent(state -> {
                     state.setLastError(truncated);
                     syncStateRepository.save(state);

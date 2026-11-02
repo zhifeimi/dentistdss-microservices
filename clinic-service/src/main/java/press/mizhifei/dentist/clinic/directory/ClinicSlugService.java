@@ -28,6 +28,13 @@ public class ClinicSlugService {
     private final ClinicRepository clinicRepository;
     private final ClinicSlugHistoryRepository slugHistoryRepository;
 
+    /** Assign without mutating the selected entity or normalizing unrelated existing fields. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean assignMissingSlug(Clinic clinic, LocalDateTime now) {
+        String slug = allocate(ClinicSlugs.baseSlug(clinic.getName(), clinic.getCity()), clinic.getId());
+        return clinicRepository.assignSlugIfMissing(clinic.getId(), slug, now) > 0;
+    }
+
     /**
      * Gives an approved clinic its slug, or moves it to a new one after a
      * rename or a move to another suburb (the old slug goes to the history).
@@ -41,11 +48,17 @@ public class ClinicSlugService {
     public boolean refreshSlug(Clinic clinic, LocalDateTime now) {
         String base = ClinicSlugs.baseSlug(clinic.getName(), clinic.getCity());
         String current = clinic.getSlug();
-        if (ClinicSlugs.isCandidateOf(current, base)) {
+        if (Objects.equals(current, base)
+                || (ClinicSlugs.isCandidateOf(current, base)
+                    && slugHistoryRepository.findByClinicIdOrderByRetiredAtDescSlugAsc(clinic.getId()).stream()
+                        .noneMatch(previous -> ClinicSlugs.isCandidateOf(previous.getSlug(), base)))) {
             return false;
         }
 
         String next = allocate(base, clinic.getId());
+        if (Objects.equals(current, next)) {
+            return false;
+        }
         if (current != null) {
             slugHistoryRepository.save(ClinicSlugHistory.builder()
                     .slug(current)

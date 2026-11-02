@@ -230,6 +230,9 @@ services:
   clinic-service:
     <<: *spring-service
     image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-clinic-service:${BACKEND_IMAGE_TAG:-latest}
+    networks:
+      - backend
+      - egress
     depends_on:
       postgres:
         condition: service_healthy
