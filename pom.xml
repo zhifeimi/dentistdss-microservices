@@ -53,9 +53,10 @@
              its managed versions caught up or passed them (tomcat 11.0.27,
              jackson 2.21.7/3.1.7, httpcore5 5.4.4, freemarker 2.3.35).
              Re-add an override only when it is strictly ahead of the version
-             managed by the current Boot parent. bcprov is transitive (not
-             Boot-managed), pinned below. -->
+             managed by the current Boot parent. bcprov and guava are transitive
+             (not Boot-managed), pinned below. -->
         <bouncycastle.version>1.85</bouncycastle.version>
+        <guava.version>33.7.2-jre</guava.version>
         <maven-enforcer-plugin.version>3.7.0</maven-enforcer-plugin.version>
         <!-- 4.10.3.0 bundles SpotBugs 4.10.3 (ASM 9.10.1), the first line that
              parses Java 25 class files; 4.9.x crashes with "Unsupported class
@@ -170,6 +171,11 @@
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcprov-jdk18on</artifactId>
                 <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
