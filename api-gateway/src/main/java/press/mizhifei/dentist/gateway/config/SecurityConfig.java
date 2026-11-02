@@ -60,6 +60,10 @@ public class SecurityConfig {
                                     "/actuator/health/**",
                                     "/api/clinic/list/all",
                                     "/api/clinic/search",
+                                    // Public clinic directory (SEO prerender):
+                                    // read-only, rate-limited per client IP.
+                                    "/api/public/clinics",
+                                    "/api/public/clinics/*",
                                     "/api/auth/csrf",
                                     "/api/auth/oauth2/jwks",
                                     "/oauth2/nonce")
