@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  *
  * @author zhifeimi
@@ -27,4 +29,13 @@ public class ClinicResponse {
     private String phoneNumber;
     private String email;
     private String website;
+    private String description;
+    /** Public URL slug; assigned once the clinic is approved. */
+    private String slug;
+    /** "Show my clinic in public search". */
+    private Boolean listedPublicly;
+    private Double latitude;
+    private Double longitude;
+    /** Weekly opening hours; only on single-clinic responses, {@code null} in lists. */
+    private List<OperatingHoursDto> operatingHours;
 } 

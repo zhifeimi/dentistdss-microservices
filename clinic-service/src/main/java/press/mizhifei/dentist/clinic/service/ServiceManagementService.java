@@ -10,6 +10,7 @@ import press.mizhifei.dentist.clinic.exception.ServiceNotFoundException;
 import press.mizhifei.dentist.clinic.repository.ClinicRepository;
 import press.mizhifei.dentist.clinic.repository.ServiceRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -45,6 +46,7 @@ public class ServiceManagementService {
                 .build();
         
         press.mizhifei.dentist.clinic.model.Service saved = serviceRepository.save(service);
+        touchClinic(saved.getClinicId());
         log.info("Created service {} for clinic {}", saved.getId(), saved.getClinicId());
         
         return toResponse(saved);
@@ -63,6 +65,7 @@ public class ServiceManagementService {
         service.setIsActive(request.getIsActive());
         
         press.mizhifei.dentist.clinic.model.Service saved = serviceRepository.save(service);
+        touchClinic(saved.getClinicId());
         log.info("Updated service {}", id);
         
         return toResponse(saved);
@@ -76,7 +79,18 @@ public class ServiceManagementService {
         // Soft delete by deactivating
         service.setIsActive(false);
         serviceRepository.save(service);
+        touchClinic(service.getClinicId());
         log.info("Deactivated service {}", id);
+    }
+
+    /**
+     * Services are listed on the public clinic page, so a change to them is
+     * a change to the clinic's public data ({@code updatedAt}, sitemap lastmod).
+     */
+    private void touchClinic(Long clinicId) {
+        if (clinicId != null) {
+            clinicRepository.touchUpdatedAt(List.of(clinicId), LocalDateTime.now());
+        }
     }
     
     @Transactional(readOnly = true)

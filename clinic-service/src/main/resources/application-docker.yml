@@ -59,3 +59,10 @@ logging:
   level:
     press.mizhifei.dentist: INFO
     org.springframework: INFO
+
+# Public clinic directory (GET /api/public/clinics) and its frontend rebuild
+# trigger. The Vercel Deploy Hook URL is a secret, injected as
+# VERCEL_DEPLOY_HOOK_URL; unset disables the trigger (the endpoints still work).
+public-directory:
+  deploy-hook:
+    url: ${VERCEL_DEPLOY_HOOK_URL:}

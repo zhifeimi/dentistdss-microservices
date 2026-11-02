@@ -9,6 +9,8 @@ import press.mizhifei.dentist.clinic.client.AppointmentServiceClient;
 import press.mizhifei.dentist.clinic.client.PatientServiceClient;
 import press.mizhifei.dentist.clinic.client.UserProfileServiceClient;
 import press.mizhifei.dentist.clinic.model.Clinic;
+import press.mizhifei.dentist.clinic.directory.ClinicSlugService;
+import press.mizhifei.dentist.clinic.repository.ClinicOperatingHoursRepository;
 import press.mizhifei.dentist.clinic.repository.ClinicRepository;
 
 import java.util.Optional;
@@ -33,7 +35,9 @@ class ClinicServiceAppointmentFailureTest {
                 clinicRepository,
                 appointmentServiceClient,
                 mock(PatientServiceClient.class),
-                mock(UserProfileServiceClient.class));
+                mock(UserProfileServiceClient.class),
+                mock(ClinicOperatingHoursRepository.class),
+                mock(ClinicSlugService.class));
         when(clinicRepository.findById(42L))
                 .thenReturn(Optional.of(new Clinic()));
     }

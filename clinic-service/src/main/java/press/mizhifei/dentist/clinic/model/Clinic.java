@@ -39,6 +39,24 @@ public class Clinic {
     private String email;
     private String website;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    /**
+     * Stable public URL slug, assigned once the clinic is approved. Previous
+     * values live in {@code clinic_slug_history}.
+     */
+    @Column(length = 160, unique = true)
+    private String slug;
+
+    /** "Show my clinic in public search" — public listing is opt-in. */
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean listedPublicly = false;
+
+    private Double latitude;
+    private Double longitude;
+
     @Builder.Default
     private Boolean enabled = false;
     @Builder.Default
@@ -62,6 +80,8 @@ public class Clinic {
         if (phoneNumber != null) phoneNumber = phoneNumber.trim();
         if (email != null) email = email.trim();
         if (website != null) website = website.trim();
+        if (description != null) description = description.trim();
+        if (listedPublicly == null) listedPublicly = false;
         updatedAt = LocalDateTime.now();
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
