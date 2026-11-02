@@ -22,9 +22,8 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * Fixed-window, per-client-IP request limit for the unauthenticated public
- * API ({@code /api/public/**}, the clinic directory the frontend build
- * prerenders from). The client address comes from
+ * Fixed-window, per-client-IP request limit shared by the public clinic
+ * directory and clinic search. The client address comes from
  * {@link TrustedProxyClientAddressResolver}, so forwarded headers count only
  * when the deployment trusts its proxy hops; Redis keys hold an HMAC of the
  * address, never the address itself. Fails closed (503) when Redis is down,
