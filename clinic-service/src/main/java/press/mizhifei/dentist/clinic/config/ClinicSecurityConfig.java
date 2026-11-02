@@ -11,8 +11,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import press.mizhifei.dentist.security.ServletJwtResourceServerCustomizer;
 
 /**
- * Clinic service security boundary. Only the clinic list used by anonymous
- * booking and the read-only public clinic directory (SEO prerender) stay
+ * Clinic service security boundary. Only the clinic list and search used by
+ * anonymous booking and the read-only public clinic directory (SEO prerender) stay
  * open — every other route requires a verified user JWT. Role and
  * clinic-ownership rules are enforced by the controllers from the JWT
  * claims; forwarded identity headers are not trust evidence.
@@ -40,6 +40,8 @@ public class ClinicSecurityConfig {
                                     // only approved, opted-in clinics.
                                     "/public/clinics",
                                     "/public/clinics/*")
+                            .permitAll();
+                    authorize.requestMatchers(HttpMethod.POST, "/clinic/search")
                             .permitAll();
                     authorize.requestMatchers("/clinic/**")
                             .authenticated();

@@ -91,6 +91,14 @@ spring:
               filters:
                 - StripPrefix=1
 
+            # Backward-compatible public search used by Find a clinic.
+            - id: clinic-service-search-alias
+              uri: lb://clinic-service
+              predicates:
+                - Path=/api/clinic-admin/clinics/search
+              filters:
+                - SetPath=/clinic/search
+
             # Public clinic directory for the frontend's build-time prerender:
             # unauthenticated GET only (SecurityConfig), rate-limited per client
             # IP (PublicApiRateLimitFilter). /api/public/clinics/** -> /public/clinics/**
@@ -282,7 +290,7 @@ app:
     anonymous-session-issuance:
       fingerprint-key: ${ANONYMOUS_SESSION_FINGERPRINT_KEY:docker-development-fingerprint-key-change-me}
       trusted-proxy-count: ${ANONYMOUS_SESSION_TRUSTED_PROXY_COUNT:0}
-    # Unauthenticated /api/public/** (clinic directory): requests per client IP
+    # Public clinic directory and search: shared requests per client IP
     # per window. The client IP honours trusted-proxy-count above.
     public-api-rate-limit:
       source-limit: ${PUBLIC_API_RATE_LIMIT_SOURCE_LIMIT:60}

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
+import press.mizhifei.dentist.gateway.config.GatewayRequestMatchers;
 import press.mizhifei.dentist.gateway.service.PublicApiRateLimiter;
 import reactor.core.publisher.Mono;
 
@@ -19,9 +20,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * Applies {@link PublicApiRateLimiter} to every routed {@code /api/public/**}
- * request, answering 429 with {@code Retry-After} once a client's window is
- * full. Routes outside the public namespace are untouched.
+ * Applies the shared {@link PublicApiRateLimiter} quota to routed
+ * {@code /api/public/**} requests and clinic search POSTs, answering 429 with
+ * {@code Retry-After} once a client's window is full.
  */
 @Component
 public class PublicApiRateLimitFilter implements GlobalFilter, Ordered {
@@ -40,13 +41,16 @@ public class PublicApiRateLimitFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        if (!PUBLIC_API_PATTERN.matches(exchange.getRequest().getPath().pathWithinApplication())) {
-            return chain.filter(exchange);
-        }
-        return rateLimiter.tryAcquire(exchange.getRequest())
-                .flatMap(decision -> decision.allowed()
-                        ? chain.filter(exchange)
-                        : tooManyRequests(exchange.getResponse(), decision.retryAfter()));
+        return GatewayRequestMatchers.CLINIC_SEARCH.matches(exchange).flatMap(search -> {
+            if (!search.isMatch()
+                    && !PUBLIC_API_PATTERN.matches(exchange.getRequest().getPath().pathWithinApplication())) {
+                return chain.filter(exchange);
+            }
+            return rateLimiter.tryAcquire(exchange.getRequest())
+                    .flatMap(decision -> decision.allowed()
+                            ? chain.filter(exchange)
+                            : tooManyRequests(exchange.getResponse(), decision.retryAfter()));
+        });
     }
 
     private Mono<Void> tooManyRequests(ServerHttpResponse response, Duration retryAfter) {

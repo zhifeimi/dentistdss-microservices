@@ -59,7 +59,6 @@ public class SecurityConfig {
                                     "/actuator/health",
                                     "/actuator/health/**",
                                     "/api/clinic/list/all",
-                                    "/api/clinic/search",
                                     // Public clinic directory (SEO prerender):
                                     // read-only, rate-limited per client IP.
                                     "/api/public/clinics",
@@ -79,7 +78,7 @@ public class SecurityConfig {
                                     "/api/auth/signup/verify/code",
                                     "/oauth2/token")
                             .permitAll();
-                    exchanges.matchers(GatewayRequestMatchers.ANONYMOUS_HELP)
+                    exchanges.matchers(GatewayRequestMatchers.CLINIC_SEARCH, GatewayRequestMatchers.ANONYMOUS_HELP)
                             .permitAll();
                     if (springdocEnabled) {
                         exchanges.pathMatchers(
