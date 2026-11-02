@@ -92,6 +92,16 @@ spring:
               filters:
                 - StripPrefix=1
 
+            # Public clinic directory for the frontend's build-time prerender:
+            # unauthenticated GET only (SecurityConfig), rate-limited per client
+            # IP (PublicApiRateLimitFilter). /api/public/clinics/** -> /public/clinics/**
+            - id: clinic-service-public-directory
+              uri: lb://clinic-service
+              predicates:
+                - Path=/api/public/clinics/**
+              filters:
+                - StripPrefix=1
+
             # Appointment Service
             - id: appointment-service
               uri: lb://appointment-service
@@ -276,6 +286,11 @@ app:
       fingerprint-key: ${ANONYMOUS_SESSION_FINGERPRINT_KEY:local-development-fingerprint-key-change-me}
       # Keep zero unless every direct gateway caller is a trusted proxy that appends X-Forwarded-For.
       trusted-proxy-count: ${ANONYMOUS_SESSION_TRUSTED_PROXY_COUNT:0}
+    # Unauthenticated /api/public/** (clinic directory): requests per client IP
+    # per window. The client IP honours trusted-proxy-count above.
+    public-api-rate-limit:
+      source-limit: ${PUBLIC_API_RATE_LIMIT_SOURCE_LIMIT:60}
+      window: ${PUBLIC_API_RATE_LIMIT_WINDOW:PT1M}
 
 # =============================================================================
 # Service Discovery Configuration

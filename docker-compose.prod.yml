@@ -135,6 +135,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_CONFIG_USER=${SPRING_CONFIG_USER}
       - SPRING_CONFIG_PASS=${SPRING_CONFIG_PASS}
+      # Optional: Vercel Deploy Hook that rebuilds the public clinic pages.
+      - VERCEL_DEPLOY_HOOK_URL=${VERCEL_DEPLOY_HOOK_URL:-}
     ports:
       - "8083:8083"
     networks:

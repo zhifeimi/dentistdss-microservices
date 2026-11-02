@@ -259,6 +259,9 @@ public class AuthService {
                 .phoneNumber(signUpClinicAdminRequest.getPhoneNumber())
                 .email(signUpClinicAdminRequest.getBusinessEmail())
                 .website(signUpClinicAdminRequest.getWebsite())
+                // Public listing is opt-in: on only when the applicant agreed
+                // to it in the registration terms.
+                .listedPublicly(Boolean.TRUE.equals(signUpClinicAdminRequest.getListedPublicly()))
                 .enabled(false)
                 .approved(false)
                 .approvalBy(null)

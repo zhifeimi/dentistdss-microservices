@@ -230,6 +230,9 @@ services:
   clinic-service:
     <<: *spring-service
     image: ${BACKEND_IMAGE_REGISTRY:-ghcr.io/zhifeimi}/dentistdss-clinic-service:${BACKEND_IMAGE_TAG:-latest}
+    networks:
+      - backend
+      - egress
     depends_on:
       postgres:
         condition: service_healthy
@@ -247,6 +250,8 @@ services:
       DB_USERNAME: svc_clinic
       DB_PASSWORD: ${CLINIC_SERVICE_DB_PASSWORD:?CLINIC_SERVICE_DB_PASSWORD is required}
       AUTH_SERVICE_URL: http://auth-service:8081
+      # Optional: Vercel Deploy Hook for rebuilding the public clinic pages.
+      VERCEL_DEPLOY_HOOK_URL: ${VERCEL_DEPLOY_HOOK_URL:-}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}

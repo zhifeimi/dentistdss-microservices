@@ -46,6 +46,12 @@ public class SignUpClinicAdminRequest {
     private String businessEmail;
 
     private String website;
+
+    /**
+     * Agreement to "Show my clinic in public search" in the registration
+     * terms. Omitted or false keeps the clinic out of the public directory.
+     */
+    private Boolean listedPublicly;
     
     
 

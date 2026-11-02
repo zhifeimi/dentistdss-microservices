@@ -161,6 +161,45 @@ class ServiceRoleContractTest {
         });
     }
 
+    /**
+     * V5 public clinic directory: clinic-service owns the new tables, no other
+     * service reads them, and auth-service can still delete a (rejected)
+     * clinic that has rows in them — referential actions run as the table
+     * owner, so the cascade needs no svc_auth grant.
+     */
+    @Test
+    void publicClinicDirectoryTablesBelongToClinicService() throws SQLException {
+        for (String table : new String[] {"clinic_operating_hours", "clinic_slug_history",
+                "public_directory_sync" }) {
+            assertDoesNotThrow(() -> query("svc_clinic", "select count(*) from " + table),
+                    "svc_clinic must read " + table);
+            SQLException e = assertThrows(SQLException.class,
+                    () -> query("svc_auth", "select count(*) from " + table),
+                    "svc_auth must NOT read " + table);
+            assertEquals("42501", e.getSQLState(), "svc_auth -> " + table);
+        }
+        assertEquals(1, count("svc_clinic", "select count(*) from public_directory_sync where id = 1"),
+                "the rebuild-trigger singleton row must exist");
+
+        String name = "Contract Cascade Clinic " + System.nanoTime();
+        try (Connection c = DriverManager.getConnection(
+                System.getenv("TEST_DATABASE_URL"), "svc_clinic", ROLE_TEST_PASSWORD);
+                Statement s = c.createStatement()) {
+            s.execute("insert into clinics (name, enabled, approved) values ('" + name + "', false, false)");
+            s.execute("insert into clinic_operating_hours (clinic_id, day_of_week, open_time, close_time, is_open)"
+                    + " select id, 1, '08:30', '17:30', true from clinics where name = '" + name + "'");
+            s.execute("insert into clinic_slug_history (slug, clinic_id, retired_at)"
+                    + " select 'contract-cascade-" + System.nanoTime() + "', id, now() from clinics where name = '"
+                    + name + "'");
+        }
+        assertDoesNotThrow(() -> query("svc_auth", "delete from clinics where name = '" + name + "'"),
+                "svc_auth must delete a clinic whose hours and old slugs cascade");
+        assertEquals(0, count("svc_clinic",
+                "select count(*) from clinic_operating_hours h left join clinics c on c.id = h.clinic_id"
+                        + " where c.id is null"),
+                "operating hours must cascade with their clinic");
+    }
+
     @Test
     void serviceRolesCannotExecuteDdl() {
         for (String role : OWN_TABLE.keySet()) {

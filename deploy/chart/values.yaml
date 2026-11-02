@@ -39,6 +39,11 @@ externalSecrets:
   # full per-service URI (audit/genai: SPRING_DATA_MONGODB_URI;
   # clinical-records: MONGODB_URI alongside its DB_USERNAME/DB_PASSWORD).
   dbCredentialsPath: apps/dentistdss/dev/db-credentials
+  # Frontend rebuild trigger for the public clinic directory: a dedicated
+  # record holding VERCEL_DEPLOY_HOOK_URL (the Vercel Deploy Hook of the
+  # dentistdss project). Only clinic-service reads it, through an optional
+  # reference — until the record is seeded the trigger stays dormant.
+  vercelDeployHookPath: apps/dentistdss/dev/vercel-deploy-hook
   # The genai-service-auth record historically came from the cluster-wide
   # store; override these to move it onto the namespace-scoped store.
   genaiStoreKind: ClusterSecretStore
@@ -158,6 +163,9 @@ services:
   clinic-service:
     port: 8083
     replicas: 1
+    # Calls the frontend's Vercel Deploy Hook (api.vercel.com) when the public
+    # clinic directory changes.
+    externalEgress: true
     secrets:
       - dentistdss-db-clinic
       - dentistdss-redis

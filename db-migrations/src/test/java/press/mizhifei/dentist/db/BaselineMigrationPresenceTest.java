@@ -8,6 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +56,63 @@ class BaselineMigrationPresenceTest {
         // No identity column may name its backing sequence: Hibernate's
         // PostgreSQL metadata extraction cannot see identity-owned sequences,
         // so a named clinic_id_seq would fail ddl-auto=validate at boot.
+        assertFalse(sql.contains("sequence name"), "identity columns must not name their sequences");
+    }
+
+    /**
+     * DATA-02 authoring rule: a table no service role is granted on breaks
+     * its owning service at boot (ddl-auto=validate cannot see it). Every
+     * table any migration creates must appear in some table-level GRANT.
+     */
+    @Test
+    void everyCreatedTableIsGrantedToAServiceRole() throws IOException {
+        StringBuilder all = new StringBuilder();
+        for (String migration : new String[] {"V1__baseline.sql", "V2__audit_outbox.sql",
+                "V3__service_roles.sql", "V4__clinical_records_sequence_grant.sql",
+                "V5__public_clinic_directory.sql" }) {
+            try (InputStream in = getClass().getResourceAsStream("/db/migration/" + migration)) {
+                assertNotNull(in, migration + " must be packaged under db/migration");
+                all.append(new String(in.readAllBytes(), StandardCharsets.UTF_8)
+                        .toLowerCase(Locale.ROOT)).append('\n');
+            }
+        }
+        String sql = all.toString().replaceAll("--[^\\n]*", "");
+
+        Set<String> granted = new HashSet<>();
+        Matcher grant = Pattern.compile("grant\\s+[a-z,\\s]+?\\s+on\\s+(?!sequence\\b)([^;]+?)\\s+to\\s+svc_[a-z_]+\\s*;")
+                .matcher(sql);
+        while (grant.find()) {
+            for (String table : grant.group(1).split(",")) {
+                granted.add(table.trim());
+            }
+        }
+
+        Matcher created = Pattern.compile("create table\\s+([a-z_]+)").matcher(sql);
+        int tables = 0;
+        while (created.find()) {
+            tables++;
+            assertTrue(granted.contains(created.group(1)),
+                    created.group(1) + " is created but never granted to a service role");
+        }
+        assertTrue(tables >= 25, "expected the baseline plus later tables, found " + tables);
+    }
+
+    @Test
+    void publicClinicDirectoryMigrationKeepsExistingClinicsUnlisted() throws IOException {
+        String sql;
+        try (InputStream in = getClass().getResourceAsStream("/db/migration/V5__public_clinic_directory.sql")) {
+            assertNotNull(in, "V5__public_clinic_directory.sql must be packaged under db/migration");
+            sql = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        // Public listing is opt-in: no existing clinic may become public just
+        // because the column was added.
+        assertTrue(sql.contains("listed_publicly boolean default false not null"),
+                "listed_publicly must default to false");
+        // Old URLs must never resolve to a different clinic.
+        assertTrue(sql.contains("constraint uk_clinics_slug unique (slug)"), "slug must be unique");
+        assertTrue(sql.contains("insert into public_directory_sync (id) values (1);"),
+                "the rebuild-trigger singleton row must be seeded");
         assertFalse(sql.contains("sequence name"), "identity columns must not name their sequences");
     }
 

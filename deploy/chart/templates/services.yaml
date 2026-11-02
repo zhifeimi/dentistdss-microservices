@@ -240,6 +240,13 @@ spec:
                   name: dentistdss-service-auth-auth
                   key: SERVICE_AUTH_KEY_ID
                   optional: true
+            {{- else if eq $name "clinic-service" }}
+            - name: VERCEL_DEPLOY_HOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dentistdss-vercel-deploy-hook
+                  key: VERCEL_DEPLOY_HOOK_URL
+                  optional: true
             {{- else if eq $name "user-profile-service" }}
             - name: SERVICE_AUTH_PUBLIC_KEY_NOTIFICATION
               valueFrom:

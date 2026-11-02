@@ -12,10 +12,15 @@ import press.mizhifei.dentist.clinic.dto.ClinicResponse;
 import press.mizhifei.dentist.clinic.dto.ClinicSearchRequest;
 import press.mizhifei.dentist.clinic.dto.ClinicCreateRequest;
 import press.mizhifei.dentist.clinic.dto.ClinicUpdateRequest;
+import press.mizhifei.dentist.clinic.dto.OperatingHoursDto;
 import press.mizhifei.dentist.clinic.dto.PatientResponse;
 import press.mizhifei.dentist.clinic.dto.PatientWithAppointmentResponse;
 import press.mizhifei.dentist.clinic.dto.UserResponse;
+import press.mizhifei.dentist.clinic.directory.ClinicSlugService;
+import press.mizhifei.dentist.clinic.directory.PublicClinicDirectoryService;
 import press.mizhifei.dentist.clinic.model.Clinic;
+import press.mizhifei.dentist.clinic.model.ClinicOperatingHours;
+import press.mizhifei.dentist.clinic.repository.ClinicOperatingHoursRepository;
 import press.mizhifei.dentist.clinic.repository.ClinicRepository;
 import org.springframework.util.StringUtils;
 
@@ -25,6 +30,9 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -43,6 +51,8 @@ public class ClinicService {
     private final AppointmentServiceClient appointmentServiceClient;
     private final PatientServiceClient patientServiceClient;
     private final UserProfileServiceClient userProfileServiceClient;
+    private final ClinicOperatingHoursRepository operatingHoursRepository;
+    private final ClinicSlugService clinicSlugService;
 
     @Transactional(readOnly = true)
     public List<ClinicResponse> listAllEnabledClinics() {
@@ -54,7 +64,7 @@ public class ClinicService {
     public ClinicResponse getClinicById(Long id) {
         Clinic clinic = clinicRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + id));
-        return convertToDto(clinic);
+        return convertToDetailDto(clinic);
     }
 
     @Transactional(readOnly = true)
@@ -97,7 +107,7 @@ public class ClinicService {
 
     @Transactional
     public ClinicResponse updateClinic(Long id, ClinicUpdateRequest request) {
-        Clinic clinic = clinicRepository.findById(id)
+        Clinic clinic = clinicRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Clinic not found with id: " + id));
 
         // Update only non-null fields
@@ -125,10 +135,81 @@ public class ClinicService {
         if (request.getEmail() != null) {
             clinic.setEmail(request.getEmail());
         }
+        if (request.getWebsite() != null) {
+            clinic.setWebsite(blankToNull(request.getWebsite()));
+        }
+        if (request.getDescription() != null) {
+            clinic.setDescription(blankToNull(request.getDescription()));
+        }
+        if (request.getLatitude() != null && request.getLongitude() != null) {
+            clinic.setLatitude(request.getLatitude());
+            clinic.setLongitude(request.getLongitude());
+        }
+        if (request.getListedPublicly() != null) {
+            clinic.setListedPublicly(request.getListedPublicly());
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        // A rename or a move to another suburb changes the public URL; the
+        // old slug is kept so the frontend can 301-redirect it.
+        if (Boolean.TRUE.equals(clinic.getApproved()) && Boolean.TRUE.equals(clinic.getEnabled())) {
+            clinicSlugService.refreshSlug(clinic, now);
+        }
+        if (request.getOperatingHours() != null
+                && replaceOperatingHours(clinic.getId(), request.getOperatingHours())) {
+            // Hours live in their own table; keep the clinic's "last modified"
+            // (sitemap lastmod, public directory updatedAt) honest.
+            clinic.setUpdatedAt(now);
+        }
 
         Clinic saved = clinicRepository.save(clinic);
         log.info("Updated clinic {} with id {}", saved.getName(), id);
-        return convertToDto(saved);
+        return convertToDetailDto(saved);
+    }
+
+    /**
+     * Replaces the weekly schedule in place: a day present before and after
+     * is updated, a new day inserted, a dropped day deleted — so the
+     * (clinic_id, day_of_week) unique constraint never sees two rows for the
+     * same day within one flush.
+     *
+     * @return whether anything changed
+     */
+    private boolean replaceOperatingHours(Long clinicId, List<OperatingHoursDto> requested) {
+        Map<Integer, ClinicOperatingHours> existing = operatingHoursRepository
+                .findByClinicIdOrderByDayOfWeekAsc(clinicId).stream()
+                .collect(Collectors.toMap(ClinicOperatingHours::getDayOfWeek, Function.identity()));
+        boolean changed = false;
+        for (OperatingHoursDto day : requested) {
+            LocalTime open = LocalTime.parse(day.openTime());
+            LocalTime close = LocalTime.parse(day.closeTime());
+            ClinicOperatingHours row = existing.remove(day.dayOfWeek());
+            if (row == null) {
+                operatingHoursRepository.save(ClinicOperatingHours.builder()
+                        .clinicId(clinicId)
+                        .dayOfWeek(day.dayOfWeek())
+                        .openTime(open)
+                        .closeTime(close)
+                        .isOpen(day.isOpen())
+                        .build());
+                changed = true;
+            } else if (!open.equals(row.getOpenTime()) || !close.equals(row.getCloseTime())
+                    || !Objects.equals(day.isOpen(), row.getIsOpen())) {
+                row.setOpenTime(open);
+                row.setCloseTime(close);
+                row.setIsOpen(day.isOpen());
+                changed = true;
+            }
+        }
+        if (!existing.isEmpty()) {
+            operatingHoursRepository.deleteAll(existing.values());
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**
@@ -301,6 +382,16 @@ public class ClinicService {
         };
     }
 
+    /** {@link #convertToDto} plus the weekly opening hours, for single-clinic responses. */
+    private ClinicResponse convertToDetailDto(Clinic clinic) {
+        ClinicResponse response = convertToDto(clinic);
+        response.setOperatingHours(operatingHoursRepository.findByClinicIdOrderByDayOfWeekAsc(clinic.getId())
+                .stream()
+                .map(PublicClinicDirectoryService::toDto)
+                .toList());
+        return response;
+    }
+
     private ClinicResponse convertToDto(Clinic clinic) {
         return ClinicResponse.builder()
                 .id(clinic.getId())
@@ -313,6 +404,11 @@ public class ClinicService {
                 .phoneNumber(clinic.getPhoneNumber())
                 .email(clinic.getEmail())
                 .website(clinic.getWebsite())
+                .description(clinic.getDescription())
+                .slug(clinic.getSlug())
+                .listedPublicly(clinic.getListedPublicly())
+                .latitude(clinic.getLatitude())
+                .longitude(clinic.getLongitude())
                 .build();
     }
 }

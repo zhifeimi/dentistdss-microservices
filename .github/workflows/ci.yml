@@ -17,7 +17,8 @@ concurrency:
 jobs:
   test:
     name: Maven verify
-    runs-on: ubuntu-latest
+    # MongoDB 8.0 requires the pre-6.19 kernel provided by Ubuntu 22.04.
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     services:
       postgres:
@@ -88,7 +89,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
       - name: Validate Compose model
-        run: docker compose --env-file deploy/.env.example --file deploy/compose.yml config --quiet
+        run: |
+          docker compose --env-file deploy/.env.example --file deploy/compose.yml config --quiet
+          docker compose --env-file deploy/.env.example --file deploy/compose.yml config --format json | python3 -I -c '
+          import json, sys
+          model = json.load(sys.stdin)
+          assert any(not model["networks"][network].get("internal", False)
+                     for network in model["services"]["clinic-service"]["networks"]), "clinic-service cannot reach its external deploy hook"
+          '
 
       - name: Validate RKE2 Helm chart
         run: |
