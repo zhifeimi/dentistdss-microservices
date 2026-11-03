@@ -67,4 +67,21 @@ public class ClinicHoliday {
 
     @Column(nullable = false)
     private LocalDateTime updatedAt;
+
+    public boolean occursOn(LocalDate date) {
+        return Boolean.TRUE.equals(isRecurring)
+                ? !date.isBefore(holidayDate) && holidayDate.withYear(date.getYear()).equals(date)
+                : holidayDate.equals(date);
+    }
+
+    public boolean overlaps(LocalDate date, boolean recurring) {
+        if (Boolean.TRUE.equals(isRecurring) && recurring) {
+            // A common year also catches February 29's fallback onto February 28.
+            return holidayDate.withYear(2001).equals(date.withYear(2001));
+        }
+        if (recurring) {
+            return !holidayDate.isBefore(date) && date.withYear(holidayDate.getYear()).equals(holidayDate);
+        }
+        return occursOn(date);
+    }
 }

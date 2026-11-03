@@ -3,6 +3,8 @@ package press.mizhifei.dentist.appointment.service;
 import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.security.access.AccessDeniedException;
@@ -96,10 +98,16 @@ class AppointmentServiceAuthorizationTest {
                 clinicServiceClient);
     }
 
-    @Test
-    void patientCreationDerivesPatientAndCreatorFromActor() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void patientCreationDerivesPatientAndCreatorFromActor(boolean specialHours) {
         AppointmentRequest request = validRequest();
         request.setCreatedBy(999L);
+        if (specialHours) {
+            when(clinicServiceClient.getClosure(7L, request.getAppointmentDate().toString()))
+                    .thenReturn(ApiResponse.success(new ClinicClosureResponse(
+                            request.getAppointmentDate(), false, request.getStartTime(), request.getEndTime(), null)));
+        }
         DentistAvailability availability = DentistAvailability.builder()
                 .dentistId(84L)
                 .clinicId(7L)
@@ -139,8 +147,10 @@ class AppointmentServiceAuthorizationTest {
                 eq(42L)))
                 .thenReturn(saved);
 
-        service.createAppointment(request, patientActor());
+        AppointmentResponse response = service.createAppointment(request, patientActor());
 
+        assertEquals(LocalTime.of(10, 0), response.getStartTime());
+        assertEquals(LocalTime.of(10, 30), response.getEndTime());
         InOrder appointmentWriteOrder = inOrder(appointmentRepository);
         appointmentWriteOrder.verify(appointmentRepository)
                 .acquireDentistScheduleLock(84L);
@@ -736,13 +746,19 @@ class AppointmentServiceAuthorizationTest {
         Appointment authorized = appointment(100L, 42L, 84L, 7L);
         LocalDate holiday = LocalDate.now().plusDays(3);
         when(appointmentRepository.findByIdAndPatientId(100L, 42L)).thenReturn(Optional.of(authorized));
+        when(availabilityRepository.findAvailableSlots(84L, 7L, holiday)).thenReturn(List.of(
+                DentistAvailability.builder().dentistId(84L).clinicId(7L).availableDate(holiday)
+                        .startTime(LocalTime.of(8, 0)).endTime(LocalTime.of(17, 0)).isBlocked(false).build()));
         when(clinicServiceClient.getClosure(7L, holiday.toString()))
-                .thenReturn(ApiResponse.success(new ClinicClosureResponse(holiday, true, null, null, null)));
+                .thenReturn(ApiResponse.success(new ClinicClosureResponse(holiday, true, null, null, "Clinic holiday")));
 
-        assertThrows(
+        InvalidAppointmentRequestException error = assertThrows(
                 InvalidAppointmentRequestException.class,
                 () -> service.rescheduleAppointment(
                         100L, holiday, LocalTime.of(10, 0), LocalTime.of(10, 30), patientActor()));
+
+        assertTrue(error.getMessage().contains("The clinic is closed on " + holiday));
+        assertTrue(error.getMessage().contains("Clinic holiday"));
         verify(appointmentRepository, never()).acquireDentistScheduleLock(any());
     }
 

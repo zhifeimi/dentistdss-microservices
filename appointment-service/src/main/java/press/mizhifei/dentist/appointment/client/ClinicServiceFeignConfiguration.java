@@ -24,7 +24,7 @@ public class ClinicServiceFeignConfiguration {
             String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
             if (authorization != null
                     && !authorization.isBlank()
-                    && authorization.startsWith("Bearer ")) {
+                    && authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
                 template.header(HttpHeaders.AUTHORIZATION, authorization);
             }
         };

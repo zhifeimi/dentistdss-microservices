@@ -11,7 +11,8 @@ import java.time.temporal.ChronoUnit;
 /**
  * A clinic holiday as the dashboard shows it ({@code Holiday} in the
  * frontend). {@code holidayDate} is the next occurrence for a recurring
- * holiday; {@code daysUntilHoliday} is negative once a one-off date has passed.
+ * holiday; {@code recurrenceAnchorDate} retains its original date for edits.
+ * {@code daysUntilHoliday} is negative once a one-off date has passed.
  */
 public record HolidayResponse(
         Long id,
@@ -29,7 +30,8 @@ public record HolidayResponse(
         Boolean isUpcoming,
         Long daysUntilHoliday,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt) {
+        LocalDateTime updatedAt,
+        LocalDate recurrenceAnchorDate) {
 
     /** How far ahead a holiday counts as upcoming. */
     public static final int UPCOMING_DAYS = 30;
@@ -53,7 +55,8 @@ public record HolidayResponse(
                 days >= 0 && days <= UPCOMING_DAYS,
                 days,
                 h.getCreatedAt(),
-                h.getUpdatedAt());
+                h.getUpdatedAt(),
+                Boolean.TRUE.equals(h.getIsRecurring()) ? h.getHolidayDate() : null);
     }
 
     /**

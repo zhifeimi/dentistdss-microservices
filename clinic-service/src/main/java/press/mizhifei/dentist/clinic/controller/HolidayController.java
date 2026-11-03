@@ -2,8 +2,8 @@ package press.mizhifei.dentist.clinic.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -92,6 +92,7 @@ public class HolidayController {
     }
 
     @PostMapping
+    @Transactional
     public ResponseEntity<ApiResponse<HolidayResponse>> create(
             @PathVariable Long clinicId,
             @Valid @RequestBody HolidayRequest request,
@@ -100,15 +101,13 @@ public class HolidayController {
         if (denied != null) {
             return denied;
         }
-        if (!clinicRepository.existsById(clinicId)) {
-            return ResponseEntity.status(404).body(ApiResponse.error("Clinic not found"));
-        }
         LocalDateTime now = LocalDateTime.now(clock);
         ClinicHoliday holiday = ClinicHoliday.builder().clinicId(clinicId).createdAt(now).build();
         return save(holiday, request, now);
     }
 
     @PutMapping("/{id}")
+    @Transactional
     public ResponseEntity<ApiResponse<HolidayResponse>> update(
             @PathVariable Long clinicId,
             @PathVariable Long id,
@@ -148,9 +147,30 @@ public class HolidayController {
 
     private ResponseEntity<ApiResponse<HolidayResponse>> save(
             ClinicHoliday holiday, HolidayRequest request, LocalDateTime now) {
+        // ponytail: serialize holiday writes per clinic; finer locks only if write throughput demands it.
+        if (clinicRepository.findByIdForUpdate(holiday.getClinicId()).isEmpty()) {
+            return ResponseEntity.status(404).body(ApiResponse.error("Clinic not found"));
+        }
         boolean fullDay = request.isFullDayClosure();
+        LocalDate date = request.holidayDate();
+        if (request.isRecurring()) {
+            if (request.recurrenceAnchorDate() != null) {
+                date = request.recurrenceAnchorDate();
+            } else if (Boolean.TRUE.equals(holiday.getIsRecurring()) && holiday.occursOn(date)) {
+                // Existing PWA forms submit the projected date even on name-only edits.
+                date = holiday.getHolidayDate();
+            }
+        }
+        LocalDate anchor = date;
+        boolean overlaps = holidayRepository.findByClinicIdOrderByHolidayDateAsc(holiday.getClinicId()).stream()
+                .filter(existing -> !Objects.equals(existing.getId(), holiday.getId()))
+                .anyMatch(existing -> existing.overlaps(anchor, request.isRecurring()));
+        if (overlaps) {
+            return ResponseEntity.status(409)
+                    .body(ApiResponse.error("This clinic already has a holiday on that date."));
+        }
         holiday.setName(request.name().trim());
-        holiday.setHolidayDate(request.holidayDate());
+        holiday.setHolidayDate(anchor);
         holiday.setDescription(blankToNull(request.description()));
         holiday.setType(request.type());
         holiday.setIsFullDayClosure(fullDay);
@@ -159,13 +179,8 @@ public class HolidayController {
         holiday.setIsRecurring(request.isRecurring());
         holiday.setEmergencyContact(blankToNull(request.emergencyContact()));
         holiday.setUpdatedAt(now);
-        try {
-            ClinicHoliday saved = holidayRepository.saveAndFlush(holiday);
-            return ResponseEntity.ok(ApiResponse.success(HolidayResponse.of(saved, today())));
-        } catch (DataIntegrityViolationException e) {
-            return ResponseEntity.status(409)
-                    .body(ApiResponse.error("This clinic already has a holiday on that date."));
-        }
+        ClinicHoliday saved = holidayRepository.saveAndFlush(holiday);
+        return ResponseEntity.ok(ApiResponse.success(HolidayResponse.of(saved, today())));
     }
 
     private java.util.stream.Stream<HolidayResponse> responses(Long clinicId) {

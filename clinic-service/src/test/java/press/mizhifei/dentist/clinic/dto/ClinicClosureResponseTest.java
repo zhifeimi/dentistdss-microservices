@@ -15,6 +15,7 @@ class ClinicClosureResponseTest {
         ClinicHoliday leapDay = ClinicHoliday.builder()
                 .holidayDate(LocalDate.of(2024, 2, 29)).isRecurring(true).build();
 
+        assertTrue(ClinicClosureResponse.occursOn(leapDay, LocalDate.of(2024, 2, 29)));
         assertTrue(ClinicClosureResponse.occursOn(leapDay, LocalDate.of(2027, 2, 28)));
         assertFalse(ClinicClosureResponse.occursOn(leapDay, LocalDate.of(2027, 3, 1)));
         assertTrue(ClinicClosureResponse.occursOn(leapDay, LocalDate.of(2028, 2, 29)));

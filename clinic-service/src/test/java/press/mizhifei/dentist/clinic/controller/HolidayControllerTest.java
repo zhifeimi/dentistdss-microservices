@@ -3,7 +3,11 @@ package press.mizhifei.dentist.clinic.controller;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +25,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import press.mizhifei.dentist.clinic.config.ClinicSecurityConfig;
+import press.mizhifei.dentist.clinic.exception.GlobalExceptionHandler;
+import press.mizhifei.dentist.clinic.dto.HolidayResponse;
+import press.mizhifei.dentist.clinic.model.Clinic;
 import press.mizhifei.dentist.clinic.model.ClinicHoliday;
 import press.mizhifei.dentist.clinic.model.HolidayType;
 import press.mizhifei.dentist.clinic.repository.ClinicHolidayRepository;
@@ -29,6 +36,7 @@ import press.mizhifei.dentist.security.RedisAccessTokenJwtDecoder;
 import press.mizhifei.dentist.security.ServletBearerTokenFailureHandler;
 import press.mizhifei.dentist.security.ServletJwtResourceServerCustomizer;
 
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -41,6 +49,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -57,7 +66,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @ExtendWith(SpringExtension.class)
 @WebAppConfiguration
-@ContextConfiguration(classes = {HolidayControllerTest.TestConfig.class, ClinicSecurityConfig.class})
+@ContextConfiguration(classes = {HolidayControllerTest.TestConfig.class, ClinicSecurityConfig.class,
+        GlobalExceptionHandler.class})
 @TestPropertySource(properties = "springdoc.api-docs.enabled=false")
 class HolidayControllerTest {
 
@@ -82,6 +92,7 @@ class HolidayControllerTest {
     @BeforeEach
     void setUp() {
         reset(holidayRepository, clinicRepository);
+        when(clinicRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(Clinic.builder().id(7L).build()));
         when(holidayRepository.saveAndFlush(any())).thenAnswer(call -> {
             ClinicHoliday h = call.getArgument(0);
             if (h.getId() == null) {
@@ -110,7 +121,6 @@ class HolidayControllerTest {
 
     @Test
     void clinicAdminCreatesFullDayHoliday() throws Exception {
-        when(clinicRepository.existsById(7L)).thenReturn(true);
 
         mockMvc.perform(post("/clinic/{clinicId}/holidays", 7).with(clinicAdmin(7L))
                         .contentType("application/json").content(FULL_DAY_BODY))
@@ -126,6 +136,44 @@ class HolidayControllerTest {
         assertNull(saved.getValue().getDescription(), "blank description is stored as null");
         assertEquals("0400 000 000", saved.getValue().getEmergencyContact());
         assertNull(saved.getValue().getSpecialOpeningTime());
+    }
+
+    @Test
+    void duplicateDateConstraintReturnsConflict() throws Exception {
+        doThrow(new DataIntegrityViolationException("duplicate", new ConstraintViolationException(
+                "duplicate", new SQLException("duplicate", "23505"), "insert", "uk_clinic_holidays_date")))
+                .when(holidayRepository).saveAndFlush(any());
+
+        mockMvc.perform(post("/clinic/7/holidays").with(clinicAdmin(7L))
+                        .contentType("application/json").content(FULL_DAY_BODY))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void unrelatedIntegrityFailuresAreNotReportedAsDuplicateDates() throws Exception {
+        doThrow(new DataIntegrityViolationException("not-null constraint"))
+                .when(holidayRepository).saveAndFlush(any());
+
+        mockMvc.perform(post("/clinic/7/holidays").with(clinicAdmin(7L))
+                        .contentType("application/json").content(FULL_DAY_BODY))
+                .andExpect(status().isInternalServerError());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2026-02-30", "not-a-date"})
+    void malformedDatesReturnBadRequest(String date) throws Exception {
+        mockMvc.perform(post("/clinic/7/holidays").with(clinicAdmin(7L))
+                        .contentType("application/json").content(FULL_DAY_BODY.replace("2026-12-25", date)))
+                .andExpect(status().isBadRequest());
+        verify(holidayRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void unknownHolidayTypeReturnsBadRequest() throws Exception {
+        mockMvc.perform(put("/clinic/7/holidays/5").with(clinicAdmin(7L))
+                        .contentType("application/json").content(FULL_DAY_BODY.replace("NATIONAL_HOLIDAY", "UNKNOWN")))
+                .andExpect(status().isBadRequest());
+        verify(holidayRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -147,6 +195,63 @@ class HolidayControllerTest {
                         .contentType("application/json").content(FULL_DAY_BODY))
                 .andExpect(status().isNotFound());
         verify(holidayRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void nameOnlyEditPreservesLeapDayRecurrenceAnchor() throws Exception {
+        ClinicHoliday leapDay = holiday(5L, 7L, LocalDate.of(2024, 2, 29), true);
+        when(holidayRepository.findById(5L)).thenReturn(Optional.of(leapDay));
+        when(holidayRepository.findByClinicIdOrderByHolidayDateAsc(7L)).thenReturn(List.of(leapDay));
+
+        mockMvc.perform(get("/clinic/7/holidays").with(clinicAdmin(7L)))
+                .andExpect(jsonPath("$.dataObject[0].holidayDate").value("2027-02-28"));
+        mockMvc.perform(put("/clinic/7/holidays/5").with(clinicAdmin(7L))
+                        .contentType("application/json")
+                        .content(FULL_DAY_BODY.replace("2026-12-25", "2027-02-28")))
+                .andExpect(status().isOk());
+
+        assertEquals(LocalDate.of(2024, 2, 29), leapDay.getHolidayDate());
+        assertEquals(LocalDate.of(2028, 2, 29),
+                HolidayResponse.of(leapDay, LocalDate.of(2028, 1, 1)).holidayDate());
+        mockMvc.perform(get("/clinic/7/holidays").with(clinicAdmin(7L)))
+                .andExpect(jsonPath("$.dataObject[0].recurrenceAnchorDate").value("2024-02-29"));
+    }
+
+    @Test
+    void projectedDateFromAnOlderFormPreservesTheAnchor() throws Exception {
+        ClinicHoliday leapDay = holiday(5L, 7L, LocalDate.of(2024, 2, 29), true);
+        when(holidayRepository.findById(5L)).thenReturn(Optional.of(leapDay));
+
+        mockMvc.perform(put("/clinic/7/holidays/5").with(clinicAdmin(7L))
+                        .contentType("application/json")
+                        .content(FULL_DAY_BODY.replace("2026-12-25", "2026-02-28")))
+                .andExpect(status().isOk());
+        assertEquals(LocalDate.of(2024, 2, 29), leapDay.getHolidayDate());
+    }
+
+    @Test
+    void explicitAnchorAllowsChangingLeapDayToFebruary28() throws Exception {
+        ClinicHoliday leapDay = holiday(5L, 7L, LocalDate.of(2024, 2, 29), true);
+        when(holidayRepository.findById(5L)).thenReturn(Optional.of(leapDay));
+        String body = FULL_DAY_BODY.replace("2026-12-25", "2027-02-28")
+                .replace("\"isRecurring\":true", "\"isRecurring\":true,\"recurrenceAnchorDate\":\"2026-02-28\"");
+
+        mockMvc.perform(put("/clinic/7/holidays/5").with(clinicAdmin(7L))
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        assertEquals(LocalDate.of(2026, 2, 28), leapDay.getHolidayDate());
+    }
+
+    @Test
+    void changingTheProjectedDateChangesTheRecurrenceAnchor() throws Exception {
+        ClinicHoliday leapDay = holiday(5L, 7L, LocalDate.of(2024, 2, 29), true);
+        when(holidayRepository.findById(5L)).thenReturn(Optional.of(leapDay));
+
+        mockMvc.perform(put("/clinic/7/holidays/5").with(clinicAdmin(7L))
+                        .contentType("application/json").content(FULL_DAY_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dataObject.recurrenceAnchorDate").value("2026-12-25"));
+        assertEquals(LocalDate.of(2026, 12, 25), leapDay.getHolidayDate());
     }
 
     @Test
