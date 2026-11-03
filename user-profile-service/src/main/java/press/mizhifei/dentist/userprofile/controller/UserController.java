@@ -89,6 +89,25 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * The Staff page for a clinic admin: only their own clinic's staff. The
+     * system admin may list any clinic.
+     */
+    @GetMapping("/clinic/{clinicId}/staff")
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'CLINIC_ADMIN')")
+    public ResponseEntity<ApiResponse<List<UserResponse>>> getClinicStaff(
+            @PathVariable Long clinicId,
+            Authentication authentication) {
+        if (!(authentication instanceof JwtAuthenticationToken jwtToken)) {
+            throw new AccessDeniedException("Authenticated principal is not a JWT");
+        }
+        AuthenticatedUser user = AuthenticatedUser.from(jwtToken.getToken());
+        if (!user.hasRole("SYSTEM_ADMIN") && !clinicId.equals(user.clinicId())) {
+            throw new AccessDeniedException("Staff lists are limited to your own clinic");
+        }
+        return ResponseEntity.ok(ApiResponse.success(userService.getClinicStaff(clinicId)));
+    }
+
     @GetMapping("/clinic/{clinicId}/dentists")
     public List<UserResponse> getClinicDentists(@PathVariable Long clinicId) {
         return userService.getClinicDentists(clinicId);

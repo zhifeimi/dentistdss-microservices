@@ -1,0 +1,212 @@
+package press.mizhifei.dentist.clinic.controller;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.test.context.web.WebAppConfiguration;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import press.mizhifei.dentist.clinic.config.ClinicSecurityConfig;
+import press.mizhifei.dentist.clinic.model.ClinicHoliday;
+import press.mizhifei.dentist.clinic.model.HolidayType;
+import press.mizhifei.dentist.clinic.repository.ClinicHolidayRepository;
+import press.mizhifei.dentist.clinic.repository.ClinicRepository;
+import press.mizhifei.dentist.security.RedisAccessTokenJwtDecoder;
+import press.mizhifei.dentist.security.ServletBearerTokenFailureHandler;
+import press.mizhifei.dentist.security.ServletJwtResourceServerCustomizer;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@ExtendWith(SpringExtension.class)
+@WebAppConfiguration
+@ContextConfiguration(classes = {HolidayControllerTest.TestConfig.class, ClinicSecurityConfig.class})
+@TestPropertySource(properties = "springdoc.api-docs.enabled=false")
+class HolidayControllerTest {
+
+    /** 2026-11-03 10:00 in Sydney. */
+    private static final Instant NOW = Instant.parse("2026-11-02T23:00:00Z");
+
+    private static final String FULL_DAY_BODY = """
+            {"name":"Christmas Day","holidayDate":"2026-12-25","description":"","type":"NATIONAL_HOLIDAY",
+             "isFullDayClosure":true,"isRecurring":true,"emergencyContact":" 0400 000 000 "}""";
+
+    @Autowired
+    private WebApplicationContext applicationContext;
+
+    @Autowired
+    private ClinicHolidayRepository holidayRepository;
+
+    @Autowired
+    private ClinicRepository clinicRepository;
+
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUp() {
+        reset(holidayRepository, clinicRepository);
+        when(holidayRepository.saveAndFlush(any())).thenAnswer(call -> {
+            ClinicHoliday h = call.getArgument(0);
+            if (h.getId() == null) {
+                h.setId(99L);
+            }
+            return h;
+        });
+        mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext).apply(springSecurity()).build();
+    }
+
+    @Test
+    void clinicAdminCannotReadAnotherClinicsHolidays() throws Exception {
+        mockMvc.perform(get("/clinic/{clinicId}/holidays", 8).with(clinicAdmin(7L)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(holidayRepository);
+    }
+
+    @Test
+    void patientCannotReadHolidays() throws Exception {
+        mockMvc.perform(get("/clinic/{clinicId}/holidays", 7).with(jwt()
+                        .jwt(t -> t.subject("42").claim("roles", List.of("PATIENT")).claim("clinicId", 7L))
+                        .authorities(new SimpleGrantedAuthority("ROLE_PATIENT"))))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(holidayRepository);
+    }
+
+    @Test
+    void clinicAdminCreatesFullDayHoliday() throws Exception {
+        when(clinicRepository.existsById(7L)).thenReturn(true);
+
+        mockMvc.perform(post("/clinic/{clinicId}/holidays", 7).with(clinicAdmin(7L))
+                        .contentType("application/json").content(FULL_DAY_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dataObject.id").value(99))
+                .andExpect(jsonPath("$.dataObject.typeDisplayName").value("National holiday"))
+                .andExpect(jsonPath("$.dataObject.daysUntilHoliday").value(52))
+                .andExpect(jsonPath("$.dataObject.isUpcoming").value(false));
+
+        ArgumentCaptor<ClinicHoliday> saved = ArgumentCaptor.forClass(ClinicHoliday.class);
+        verify(holidayRepository).saveAndFlush(saved.capture());
+        assertEquals(7L, saved.getValue().getClinicId());
+        assertNull(saved.getValue().getDescription(), "blank description is stored as null");
+        assertEquals("0400 000 000", saved.getValue().getEmergencyContact());
+        assertNull(saved.getValue().getSpecialOpeningTime());
+    }
+
+    @Test
+    void specialHoursNeedAValidRange() throws Exception {
+        String body = FULL_DAY_BODY.replace("\"isFullDayClosure\":true",
+                "\"isFullDayClosure\":false,\"specialOpeningTime\":\"14:00\",\"specialClosingTime\":\"10:00\"");
+
+        mockMvc.perform(post("/clinic/{clinicId}/holidays", 7).with(clinicAdmin(7L))
+                        .contentType("application/json").content(body))
+                .andExpect(status().isBadRequest());
+        verify(holidayRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void cannotUpdateAHolidayThroughAnotherClinicsPath() throws Exception {
+        when(holidayRepository.findById(5L)).thenReturn(Optional.of(holiday(5L, 8L, LocalDate.of(2026, 12, 1), false)));
+
+        mockMvc.perform(put("/clinic/{clinicId}/holidays/{id}", 7, 5).with(clinicAdmin(7L))
+                        .contentType("application/json").content(FULL_DAY_BODY))
+                .andExpect(status().isNotFound());
+        verify(holidayRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void upcomingRollsRecurringHolidaysForwardAndDropsPastOnes() throws Exception {
+        when(holidayRepository.findByClinicIdOrderByHolidayDateAsc(7L)).thenReturn(List.of(
+                holiday(1L, 7L, LocalDate.of(2020, 11, 10), true),   // recurring: next is 2026-11-10
+                holiday(2L, 7L, LocalDate.of(2026, 10, 1), false),   // one-off, already past
+                holiday(3L, 7L, LocalDate.of(2026, 11, 3), false),   // today
+                holiday(4L, 7L, LocalDate.of(2027, 1, 26), false))); // more than 30 days away
+
+        mockMvc.perform(get("/clinic/{clinicId}/holidays/upcoming", 7).with(clinicAdmin(7L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dataObject.length()").value(2))
+                .andExpect(jsonPath("$.dataObject[0].id").value(3))
+                .andExpect(jsonPath("$.dataObject[0].daysUntilHoliday").value(0))
+                .andExpect(jsonPath("$.dataObject[1].id").value(1))
+                .andExpect(jsonPath("$.dataObject[1].holidayDate").value("2026-11-10"))
+                .andExpect(jsonPath("$.dataObject[1].specialOpeningTime").value("09:30"));
+    }
+
+    private static ClinicHoliday holiday(Long id, Long clinicId, LocalDate date, boolean recurring) {
+        LocalDateTime created = LocalDateTime.of(2026, 1, 1, 0, 0);
+        return ClinicHoliday.builder().id(id).clinicId(clinicId).name("H" + id).holidayDate(date)
+                .type(HolidayType.CLINIC_CLOSURE).isFullDayClosure(false)
+                .specialOpeningTime(LocalTime.of(9, 30)).specialClosingTime(LocalTime.of(13, 0))
+                .isRecurring(recurring).createdAt(created).updatedAt(created).build();
+    }
+
+    private static RequestPostProcessor clinicAdmin(Long clinicId) {
+        return jwt().jwt(t -> t.subject("55").claim("roles", List.of("CLINIC_ADMIN")).claim("clinicId", clinicId))
+                .authorities(new SimpleGrantedAuthority("ROLE_CLINIC_ADMIN"));
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableWebMvc
+    @EnableWebSecurity
+    @EnableMethodSecurity
+    static class TestConfig {
+
+        @Bean
+        ClinicHolidayRepository holidayRepository() {
+            return mock(ClinicHolidayRepository.class);
+        }
+
+        @Bean
+        ClinicRepository clinicRepository() {
+            return mock(ClinicRepository.class);
+        }
+
+        @Bean
+        HolidayController holidayController(ClinicHolidayRepository holidays, ClinicRepository clinics) {
+            return new HolidayController(holidays, clinics, Clock.fixed(NOW, ZoneOffset.UTC));
+        }
+
+        @Bean
+        ServletJwtResourceServerCustomizer servletJwtResourceServerCustomizer() {
+            return new ServletJwtResourceServerCustomizer(
+                    mock(RedisAccessTokenJwtDecoder.class),
+                    new JwtAuthenticationConverter(),
+                    new ServletBearerTokenFailureHandler());
+        }
+    }
+}

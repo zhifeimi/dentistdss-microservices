@@ -170,7 +170,7 @@ class ServiceRoleContractTest {
     @Test
     void publicClinicDirectoryTablesBelongToClinicService() throws SQLException {
         for (String table : new String[] {"clinic_operating_hours", "clinic_slug_history",
-                "public_directory_sync" }) {
+                "public_directory_sync", "clinic_holidays" }) {
             assertDoesNotThrow(() -> query("svc_clinic", "select count(*) from " + table),
                     "svc_clinic must read " + table);
             SQLException e = assertThrows(SQLException.class,

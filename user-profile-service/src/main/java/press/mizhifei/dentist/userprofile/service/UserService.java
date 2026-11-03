@@ -10,7 +10,9 @@ import press.mizhifei.dentist.userprofile.model.User;
 import press.mizhifei.dentist.userprofile.model.Role;
 import press.mizhifei.dentist.userprofile.repository.UserRepository;
 
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -104,6 +106,16 @@ public class UserService {
 
         User savedUser = userRepository.save(user);
         return ApiResponse.success(savedUser.toUserResponse());
+    }
+
+    /** Everyone who works at the clinic: its admins, dentists and receptionists, never its patients. */
+    @Transactional(readOnly = true)
+    public List<UserResponse> getClinicStaff(Long clinicId) {
+        Set<Role> staffRoles = EnumSet.of(Role.CLINIC_ADMIN, Role.DENTIST, Role.RECEPTIONIST);
+        return userRepository.findByClinicId(clinicId).stream()
+                .filter(user -> user.getRoles().stream().anyMatch(staffRoles::contains))
+                .map(User::toUserResponse)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
