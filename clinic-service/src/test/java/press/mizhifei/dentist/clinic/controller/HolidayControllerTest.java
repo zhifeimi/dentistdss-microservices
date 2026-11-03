@@ -167,6 +167,58 @@ class HolidayControllerTest {
                 .andExpect(jsonPath("$.dataObject[1].specialOpeningTime").value("09:30"));
     }
 
+    @Test
+    void anySignedInUserSeesAFullDayClosureFromARecurringHoliday() throws Exception {
+        ClinicHoliday christmas = holiday(1L, 7L, LocalDate.of(2020, 12, 25), true);
+        christmas.setIsFullDayClosure(true);
+        christmas.setName("Christmas Day");
+        when(holidayRepository.findByClinicIdOrderByHolidayDateAsc(7L)).thenReturn(List.of(christmas));
+
+        mockMvc.perform(get("/clinic/{clinicId}/holidays/closure", 7).param("date", "2026-12-25").with(patient()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dataObject.closed").value(true))
+                .andExpect(jsonPath("$.dataObject.reason").value("Christmas Day"));
+    }
+
+    @Test
+    void specialHoursOnTheSameDayNarrowToWhatBothAllow() throws Exception {
+        ClinicHoliday later = holiday(2L, 7L, LocalDate.of(2026, 12, 24), false);
+        later.setSpecialOpeningTime(LocalTime.of(10, 0));
+        later.setSpecialClosingTime(LocalTime.of(15, 0));
+        when(holidayRepository.findByClinicIdOrderByHolidayDateAsc(7L)).thenReturn(List.of(
+                holiday(1L, 7L, LocalDate.of(2025, 12, 24), true), // 09:30-13:00 every year
+                later));
+
+        mockMvc.perform(get("/clinic/{clinicId}/holidays/closure", 7).param("date", "2026-12-24").with(patient()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dataObject.closed").value(false))
+                .andExpect(jsonPath("$.dataObject.openTime").value("10:00"))
+                .andExpect(jsonPath("$.dataObject.closeTime").value("13:00"));
+    }
+
+    @Test
+    void ordinaryDaysAndYearsBeforeARecurringHolidayStartAreOpen() throws Exception {
+        when(holidayRepository.findByClinicIdOrderByHolidayDateAsc(7L))
+                .thenReturn(List.of(holiday(1L, 7L, LocalDate.of(2027, 1, 26), true)));
+
+        mockMvc.perform(get("/clinic/{clinicId}/holidays/closure", 7).param("date", "2026-01-26").with(patient()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dataObject.closed").value(false))
+                .andExpect(jsonPath("$.dataObject.openTime").doesNotExist());
+    }
+
+    @Test
+    void closureNeedsASignedInUser() throws Exception {
+        mockMvc.perform(get("/clinic/{clinicId}/holidays/closure", 7).param("date", "2026-12-25"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(holidayRepository);
+    }
+
+    private static RequestPostProcessor patient() {
+        return jwt().jwt(t -> t.subject("42").claim("roles", List.of("PATIENT")))
+                .authorities(new SimpleGrantedAuthority("ROLE_PATIENT"));
+    }
+
     private static ClinicHoliday holiday(Long id, Long clinicId, LocalDate date, boolean recurring) {
         LocalDateTime created = LocalDateTime.of(2026, 1, 1, 0, 0);
         return ClinicHoliday.builder().id(id).clinicId(clinicId).name("H" + id).holidayDate(date)
