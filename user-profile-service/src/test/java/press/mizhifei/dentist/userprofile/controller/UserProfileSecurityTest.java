@@ -162,6 +162,32 @@ class UserProfileSecurityTest {
     }
 
     @Test
+    void clinicAdminListsOwnClinicStaff() throws Exception {
+        when(userService.getClinicStaff(7L)).thenReturn(List.of());
+
+        mockMvc.perform(get("/user/clinic/{clinicId}/staff", 7L).with(clinicAdminJwt(7L)))
+                .andExpect(status().isOk());
+
+        verify(userService).getClinicStaff(7L);
+    }
+
+    @Test
+    void clinicAdminCannotListAnotherClinicsStaff() throws Exception {
+        mockMvc.perform(get("/user/clinic/{clinicId}/staff", 8L).with(clinicAdminJwt(7L)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    void receptionistCannotListClinicStaff() throws Exception {
+        mockMvc.perform(get("/user/clinic/{clinicId}/staff", 7L).with(receptionistJwt(7L)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(userService);
+    }
+
+    @Test
     void patientCannotLookupDetailsByEmail() throws Exception {
         mockMvc.perform(get("/user/email/{email}/details", "patient@example.test")
                         .with(patientJwt(42L)))
