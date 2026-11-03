@@ -16,6 +16,8 @@ import static press.mizhifei.dentist.clinic.dto.OperatingHoursDto.TIME_PATTERN;
 /**
  * Create or replace a clinic holiday, matching {@code CreateHolidayRequest} in
  * the frontend. A day that is not a full closure needs both special times.
+ * For a recurring holiday, an explicit {@code recurrenceAnchorDate} selects
+ * the original date, independently of the projected {@code holidayDate}.
  */
 public record HolidayRequest(
         @NotBlank(message = "name is required")
@@ -44,7 +46,9 @@ public record HolidayRequest(
         Boolean isRecurring,
 
         @Size(max = 100, message = "emergencyContact must be at most 100 characters")
-        String emergencyContact) {
+        String emergencyContact,
+
+        LocalDate recurrenceAnchorDate) {
 
     @JsonIgnore
     @AssertTrue(message = "Special hours need an opening time before the closing time")
