@@ -3,10 +3,13 @@ package press.mizhifei.dentist.appointment.service;
 import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.security.access.AccessDeniedException;
 import press.mizhifei.dentist.appointment.client.UserProfileServiceClient;
+import press.mizhifei.dentist.appointment.client.ClinicClosureResponse;
 import press.mizhifei.dentist.appointment.client.ClinicServiceClient;
 import press.mizhifei.dentist.appointment.client.NotificationClient;
 import press.mizhifei.dentist.appointment.client.ServiceResponse;
@@ -39,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -68,6 +72,10 @@ class AppointmentServiceAuthorizationTest {
                 notificationClient,
                 userProfileServiceClient,
                 clinicServiceClient);
+        // Every date is an ordinary open day unless a test says otherwise.
+        when(clinicServiceClient.getClosure(any(), any()))
+                .thenAnswer(call -> ApiResponse.success(new ClinicClosureResponse(
+                        LocalDate.parse(call.getArgument(1)), false, null, null, null)));
     }
 
     @Test
@@ -90,10 +98,16 @@ class AppointmentServiceAuthorizationTest {
                 clinicServiceClient);
     }
 
-    @Test
-    void patientCreationDerivesPatientAndCreatorFromActor() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void patientCreationDerivesPatientAndCreatorFromActor(boolean specialHours) {
         AppointmentRequest request = validRequest();
         request.setCreatedBy(999L);
+        if (specialHours) {
+            when(clinicServiceClient.getClosure(7L, request.getAppointmentDate().toString()))
+                    .thenReturn(ApiResponse.success(new ClinicClosureResponse(
+                            request.getAppointmentDate(), false, request.getStartTime(), request.getEndTime(), null)));
+        }
         DentistAvailability availability = DentistAvailability.builder()
                 .dentistId(84L)
                 .clinicId(7L)
@@ -133,8 +147,10 @@ class AppointmentServiceAuthorizationTest {
                 eq(42L)))
                 .thenReturn(saved);
 
-        service.createAppointment(request, patientActor());
+        AppointmentResponse response = service.createAppointment(request, patientActor());
 
+        assertEquals(LocalTime.of(10, 0), response.getStartTime());
+        assertEquals(LocalTime.of(10, 30), response.getEndTime());
         InOrder appointmentWriteOrder = inOrder(appointmentRepository);
         appointmentWriteOrder.verify(appointmentRepository)
                 .acquireDentistScheduleLock(84L);
@@ -693,6 +709,90 @@ class AppointmentServiceAuthorizationTest {
         assertNull(response.getConfirmedBy());
         assertNull(response.getCancelledBy());
         assertNull(response.getCancellationReason());
+    }
+
+    @Test
+    void creationIsRejectedOnAClinicHoliday() {
+        AppointmentRequest request = validRequest();
+        when(clinicServiceClient.getClosure(7L, request.getAppointmentDate().toString()))
+                .thenReturn(ApiResponse.success(new ClinicClosureResponse(
+                        request.getAppointmentDate(), true, null, null, "Christmas Day")));
+
+        InvalidAppointmentRequestException error = assertThrows(
+                InvalidAppointmentRequestException.class,
+                () -> service.createAppointment(request, patientActor()));
+
+        assertTrue(error.getMessage().contains("Christmas Day"));
+        verify(appointmentRepository, never()).acquireDentistScheduleLock(any());
+    }
+
+    @Test
+    void creationOutsideHolidaySpecialHoursIsRejected() {
+        AppointmentRequest request = validRequest(); // 10:00-10:30
+        when(availabilityRepository.findAvailableSlots(84L, 7L, request.getAppointmentDate()))
+                .thenReturn(List.of(availableAllDay(request)));
+        when(clinicServiceClient.getClosure(7L, request.getAppointmentDate().toString()))
+                .thenReturn(ApiResponse.success(new ClinicClosureResponse(
+                        request.getAppointmentDate(), false, LocalTime.of(12, 0), LocalTime.of(15, 0), "Christmas Eve")));
+
+        assertThrows(
+                InvalidAppointmentRequestException.class,
+                () -> service.createAppointment(request, patientActor()));
+        verify(appointmentRepository, never()).acquireDentistScheduleLock(any());
+    }
+
+    @Test
+    void rescheduleOntoAClinicHolidayIsRejected() {
+        Appointment authorized = appointment(100L, 42L, 84L, 7L);
+        LocalDate holiday = LocalDate.now().plusDays(3);
+        when(appointmentRepository.findByIdAndPatientId(100L, 42L)).thenReturn(Optional.of(authorized));
+        when(availabilityRepository.findAvailableSlots(84L, 7L, holiday)).thenReturn(List.of(
+                DentistAvailability.builder().dentistId(84L).clinicId(7L).availableDate(holiday)
+                        .startTime(LocalTime.of(8, 0)).endTime(LocalTime.of(17, 0)).isBlocked(false).build()));
+        when(clinicServiceClient.getClosure(7L, holiday.toString()))
+                .thenReturn(ApiResponse.success(new ClinicClosureResponse(holiday, true, null, null, "Clinic holiday")));
+
+        InvalidAppointmentRequestException error = assertThrows(
+                InvalidAppointmentRequestException.class,
+                () -> service.rescheduleAppointment(
+                        100L, holiday, LocalTime.of(10, 0), LocalTime.of(10, 30), patientActor()));
+
+        assertTrue(error.getMessage().contains("The clinic is closed on " + holiday));
+        assertTrue(error.getMessage().contains("Clinic holiday"));
+        verify(appointmentRepository, never()).acquireDentistScheduleLock(any());
+    }
+
+    @Test
+    void bookingFailsClosedWhenHolidaysCannotBeChecked() {
+        AppointmentRequest request = validRequest();
+        doThrow(new RuntimeException("clinic-service down")).when(clinicServiceClient).getClosure(any(), any());
+
+        assertThrows(
+                AppointmentDependencyUnavailableException.class,
+                () -> service.createAppointment(request, patientActor()));
+    }
+
+    @Test
+    void availableSlotsAreEmptyOnAClosedDayAndTrimmedToSpecialHours() {
+        LocalDate closed = LocalDate.now().plusDays(1);
+        LocalDate shortDay = LocalDate.now().plusDays(2);
+        for (LocalDate date : List.of(closed, shortDay)) {
+            when(availabilityRepository.findAvailableSlots(84L, 7L, date)).thenReturn(List.of(
+                    DentistAvailability.builder().dentistId(84L).clinicId(7L).availableDate(date)
+                            .startTime(LocalTime.of(8, 0)).endTime(LocalTime.of(17, 0)).isBlocked(false).build()));
+            when(appointmentRepository.findSlotBlockingAppointments(
+                    84L, date, List.of(AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW)))
+                    .thenReturn(List.of());
+        }
+        when(clinicServiceClient.getClosure(7L, closed.toString()))
+                .thenReturn(ApiResponse.success(new ClinicClosureResponse(closed, true, null, null, null)));
+        when(clinicServiceClient.getClosure(7L, shortDay.toString()))
+                .thenReturn(ApiResponse.success(new ClinicClosureResponse(
+                        shortDay, false, LocalTime.of(9, 0), LocalTime.of(10, 0), null)));
+
+        assertTrue(service.getAvailableSlots(84L, 7L, closed, null, 30, patientActor()).isEmpty());
+        // 30-minute slots every 15 minutes inside 09:00-10:00: 09:00, 09:15, 09:30.
+        assertEquals(3, service.getAvailableSlots(84L, 7L, shortDay, null, 30, patientActor()).size());
     }
 
     private AppointmentRequest validRequest() {

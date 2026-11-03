@@ -2,6 +2,7 @@ package press.mizhifei.dentist.clinic.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,8 +15,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import press.mizhifei.dentist.clinic.dto.ApiResponse;
+import press.mizhifei.dentist.clinic.dto.ClinicClosureResponse;
 import press.mizhifei.dentist.clinic.dto.HolidayRequest;
 import press.mizhifei.dentist.clinic.dto.HolidayResponse;
 import press.mizhifei.dentist.clinic.model.ClinicHoliday;
@@ -34,7 +37,9 @@ import java.util.Objects;
 
 /**
  * Holidays and one-off closures for the dashboard's Holidays page. Only the
- * clinic's own admin (or the system admin) can read or change them.
+ * clinic's own admin (or the system admin) can read or change them; the
+ * per-date {@code /closure} summary used to block bookings is open to any
+ * signed-in user.
  */
 @RestController
 @RequestMapping("/clinic/{clinicId}/holidays")
@@ -70,6 +75,20 @@ public class HolidayController {
                 .filter(HolidayResponse::isUpcoming)
                 .sorted(Comparator.comparing(HolidayResponse::holidayDate))
                 .toList()));
+    }
+
+    /**
+     * Whether the clinic takes bookings on {@code date}. appointment-service
+     * calls this with the booking user's token, so any signed-in user may
+     * read it: it reveals only what the clinic's public hours would.
+     */
+    @GetMapping("/closure")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<ClinicClosureResponse>> closure(
+            @PathVariable Long clinicId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(ApiResponse.success(ClinicClosureResponse.of(
+                holidayRepository.findByClinicIdOrderByHolidayDateAsc(clinicId), date)));
     }
 
     @PostMapping

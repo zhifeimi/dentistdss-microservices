@@ -8,6 +8,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import press.mizhifei.dentist.appointment.client.UserProfileServiceClient;
+import press.mizhifei.dentist.appointment.client.ClinicClosureResponse;
 import press.mizhifei.dentist.appointment.client.ClinicServiceClient;
 import press.mizhifei.dentist.appointment.client.NotificationClient;
 import press.mizhifei.dentist.appointment.client.ServiceResponse;
@@ -364,6 +365,10 @@ public class AppointmentService {
         if (availabilities.isEmpty()) {
             return List.of();
         }
+        ClinicClosureResponse closure = clinicClosure(clinicId, date);
+        if (closure.closed()) {
+            return List.of();
+        }
         List<Appointment> existingAppointments = appointmentRepository
                 .findSlotBlockingAppointments(
                         dentistId,
@@ -387,7 +392,9 @@ public class AppointmentService {
                         slotDurationMinutes);
                 boolean future = LocalDateTime.of(date, slotStartTime)
                         .isAfter(now);
-                boolean available = future && existingAppointments.stream()
+                boolean available = future
+                        && closure.allows(slotStartTime, slotEndTime)
+                        && existingAppointments.stream()
                         .noneMatch(appointment -> doesTimeOverlap(
                                 slotStartTime,
                                 slotEndTime,
@@ -586,6 +593,16 @@ public class AppointmentService {
             LocalDate date,
             LocalTime startTime,
             LocalTime endTime) {
+        ClinicClosureResponse closure = clinicClosure(clinicId, date);
+        if (closure.closed()) {
+            throw new InvalidAppointmentRequestException(
+                    "The clinic is closed on " + date + closureReason(closure));
+        }
+        if (!closure.allows(startTime, endTime)) {
+            throw new InvalidAppointmentRequestException(
+                    "On " + date + " the clinic is only open " + closure.openTime()
+                            + "–" + closure.closeTime() + closureReason(closure));
+        }
         boolean covered = availabilityRepository.findAvailableSlots(
                         dentistId,
                         clinicId,
@@ -597,6 +614,28 @@ public class AppointmentService {
             throw new InvalidAppointmentRequestException(
                     "The dentist is unavailable for the requested time");
         }
+    }
+
+    /**
+     * The clinic's holiday status for {@code date}. Fails closed: when
+     * clinic-service can't answer, the booking fails rather than landing on a
+     * day the clinic may be shut.
+     */
+    private ClinicClosureResponse clinicClosure(Long clinicId, LocalDate date) {
+        ApiResponse<ClinicClosureResponse> response;
+        try {
+            response = clinicServiceClient.getClosure(clinicId, date.toString());
+        } catch (Exception exception) {
+            throw new AppointmentDependencyUnavailableException(exception);
+        }
+        if (response == null || !response.isSuccess() || response.getDataObject() == null) {
+            throw new AppointmentDependencyUnavailableException();
+        }
+        return response.getDataObject();
+    }
+
+    private static String closureReason(ClinicClosureResponse closure) {
+        return closure.reason() == null ? "" : " (" + closure.reason() + ")";
     }
 
     private ServiceResponse validateService(Integer serviceId, Long clinicId) {
