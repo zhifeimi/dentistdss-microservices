@@ -56,7 +56,7 @@
              managed by the current Boot parent. bcprov and guava are transitive
              (not Boot-managed), pinned below. -->
         <bouncycastle.version>1.85</bouncycastle.version>
-        <guava.version>33.7.2-jre</guava.version>
+        <guava.version>33.8.0-jre</guava.version>
         <maven-enforcer-plugin.version>3.7.0</maven-enforcer-plugin.version>
         <!-- 4.10.3.0 bundles SpotBugs 4.10.3 (ASM 9.10.1), the first line that
              parses Java 25 class files; 4.9.x crashes with "Unsupported class
